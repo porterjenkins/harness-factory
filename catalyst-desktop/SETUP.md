@@ -162,16 +162,20 @@ user, and records the confirmed list at `.system/routines-confirmed.txt`. It can
 | --- | --- | --- |
 | Granola export | `~/Library/LaunchAgents/<prefix>.granola-export.plist`, 30 min | **Yes** — `--install-agents` |
 | Wiki ingestion | `~/Library/LaunchAgents/<prefix>.wiki-ingest.plist`, 15 min | **Yes** — `--install-agents` |
-| Claude Code routines | prompt at `~/.claude/scheduled-tasks/<id>/SKILL.md`, schedule held server-side | **No** |
+| Local scheduled tasks | `create_scheduled_task` — **Claude Desktop agent mode only** | **No** |
+| Cloud routines | `RemoteTrigger` → claude.ai, runs in a remote sandbox | Yes, but cannot reach a local vault |
 
-The routine *prompt* is a file on disk and the build writes it. The *schedule* is not: it is bound
-through in-session tooling (`list_scheduled_tasks` / `update_scheduled_task`), which a headless
-`claude -p` does not have. `CronCreate` is available headlessly but is session-scoped and
-in-memory — the job dies when the process exits, verified by creating one in one `claude -p` and
-finding nothing from a second. So the last mile is interactive:
+The routine *prompt* is a file on disk and the build writes it. The *schedule* is not, and the CLI
+cannot bind it. `create_scheduled_task` — the tool that makes a task which runs **locally**, on
+this Mac, against this vault — ships only with Claude Desktop agent mode. `CronCreate` is
+available in the CLI but is session-scoped and in-memory, so the job dies with the process.
+`RemoteTrigger` is also available and is a trap: it creates a routine that runs in a remote
+sandbox, which registers cleanly and then fails every run because it cannot see this vault.
 
-```bash
-cd <vault> && claude "$(cat .system/routines-register.md)"     # interactive, NOT -p
+So the last mile is one paste, in **Claude Desktop (agent mode)**:
+
+```
+open .system/routines-register.md, paste it into Claude Desktop, confirm what it registered
 ```
 
 Adjust times to the user's timezone and working hours; the bundled defaults are somebody else's

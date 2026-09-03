@@ -9,6 +9,7 @@ agent otherwise walks a customer through by hand.
 ./build-vault.sh --template ./filled.md --out /tmp/v --dry-run   # parse + plan only
 ./build-vault.sh --template ./filled.md --out /tmp/v --offline   # no model calls
 ./build-verify.sh ~/notes/my-vault                               # the gate, standalone
+./register-routines.sh ~/notes/my-vault                          # re-surface the last manual step
 ```
 
 Both `--template` and `--out` are required. Start from `TEMPLATE.md`.
@@ -119,22 +120,43 @@ only two are scriptable:
 | --- | --- | --- |
 | Granola export | `~/Library/LaunchAgents/<prefix>.granola-export.plist`, 30 min, `RunAtLoad true` | **Yes** — `--install-agents` |
 | Wiki ingestion | `~/Library/LaunchAgents/<prefix>.wiki-ingest.plist`, 900 s, `RunAtLoad false` | **Yes** — `--install-agents` |
-| Claude Code routines | prompt at `~/.claude/scheduled-tasks/<id>/SKILL.md`; schedule bound server-side | **No** |
+| Local scheduled tasks | `create_scheduled_task`, **Claude Desktop agent mode only**; prompt cached at `~/.claude/scheduled-tasks/<id>/SKILL.md` | **No** |
+| Cloud routines | `RemoteTrigger` → `claude.ai/v1/code/triggers`; runs in a remote sandbox | Yes, but **wrong tool** — cannot reach a local vault |
 
-The routine *prompt* is a file on disk. The *schedule* is not — it is bound through
-in-session tooling (`list_scheduled_tasks` / `update_scheduled_task`) that a
-headless `claude -p` does not have. `CronCreate` **is** available headlessly, which
-makes this look solvable, but it is session-scoped and in-memory: a job created in
-one `claude -p` is gone by the next. Verified by doing exactly that — session A
-returned a job ID, session B's `CronList` reported nothing.
+The routine *prompt* is a file on disk. The *schedule* is not, and there are three
+dead ends worth documenting so nobody re-walks them:
+
+- **`CronCreate` looks like the answer and is not.** It is available headlessly,
+  but session-scoped and in-memory. Verified: session A returned job `ecd15f45`;
+  session B's `CronList` reported nothing. A `-p` process exits immediately, so the
+  job dies before it can ever fire. Its own schema says `durable` "has no effect."
+- **`create_scheduled_task` is the right tool and the CLI does not have it.** It
+  ships with Claude Desktop agent mode — which is where the `schedule` skill file
+  actually lives (`…/local-agent-mode-sessions/…/skills/schedule/SKILL.md`).
+- **`RemoteTrigger` is reachable from the CLI and is the wrong tool.** It creates a
+  routine at `claude.ai/v1/code/triggers` that runs in a remote sandbox. It would
+  register cleanly and then fail every run, because it cannot see the vault on this
+  machine, cannot reach Obsidian, and cannot run the local tagger.
 
 So the build stops at the last mile it can reach honestly. It writes
 `.system/routines-register.md`, a ready prompt carrying each task's ID, cron and
-full body, for an **interactive** session to execute:
+full body, to be pasted into **Claude Desktop (agent mode)** — one paste instead of
+N hand-filled forms.
 
-```bash
-cd <vault> && claude "$(cat .system/routines-register.md)"     # interactive, NOT -p
-```
+`register-routines.sh` is what makes that reachable, and it is separate from the
+build for two reasons. Registration usually happens later than the build, often on
+another day; and the prompt lives in `.system/`, which is dot-prefixed and so
+invisible in Obsidian *and* hidden in Finder and macOS file pickers. Telling
+someone to open a file they cannot browse to is not instructions. The script puts
+the prompt on the clipboard (`pbcopy`, `wl-copy`, `xclip` or `clip.exe`, best
+effort and never fatal), prints the three steps and the reason Desktop is
+required, lists the task IDs and times, and names the command to re-run it. The
+build calls it automatically as its own closing block rather than as one item in a
+numbered list — it is the only step that needs the user to switch applications, and
+buried in a list is how it gets missed.
+
+`--print` dumps the raw prompt for piping; `--no-copy` leaves the clipboard alone.
+**Note that a default run replaces the clipboard contents.**
 
 The skill each routine drives is read from that routine's own `## Related` line, so
 adding a routine needs no code change.
@@ -144,6 +166,7 @@ adding a routine needs no code change.
 ```
 build-vault.sh      the 11 phases
 build-verify.sh     the gate: exits non-zero on any hard failure, CI-ready
+register-routines.sh  re-surface the registration prompt; copies it to the clipboard
 TEMPLATE.md         the input contract, blank
 lib/template.sh     markdown -> records, plus template_brief()
 lib/hydrate.sh      the five config generators and _splice

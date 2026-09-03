@@ -319,13 +319,10 @@ if [ "$DO_TAGGING" = "1" ]; then
   _n=$(( _n + 1 ))
 fi
 if [ -s "${CONFIRMED:-/dev/null}" ]; then
-  info "  $_n. Register the confirmed routines. A headless \`claude -p\` cannot: its"
-  info "     CronCreate is session-scoped and in-memory, and the persistent"
-  info "     scheduled-task API is interactive-only. So run this INTERACTIVELY:"
-  info ""
-  info "       cd '$VAULT' && claude \"\$(cat .system/routines-register.md)\""
-  info ""
-  sed 's/^/       /' "$CONFIRMED"
+  # Named here, but the real prompt comes after this list as its own block --
+  # it is the one step that needs the user to switch applications, and burying
+  # it as item N of a numbered list is how it gets missed.
+  info "  $_n. Register the routines in Claude Desktop — see ACTION REQUIRED below."
   _n=$(( _n + 1 ))
 fi
 if [ "$GRANOLA_READY" = "0" ] && [ -n "$(tmpl_records connectors__meetings | cut -d'|' -f1 | grep -v '^none$' || true)" ]; then
@@ -335,3 +332,11 @@ if [ "$GRANOLA_READY" = "0" ] && [ -n "$(tmpl_records connectors__meetings | cut
 fi
 info "  $_n. Symlink Skills/ into .claude/skills/ if this vault is used from Claude Code."
 echo
+
+# The registration prompt gets its own block, and lands on the clipboard. It is
+# the only remaining step a script cannot do, and it points at a file inside
+# `.system/` -- dot-prefixed, so invisible in Obsidian and hidden in Finder. A
+# path the user cannot browse to needs to arrive already copied.
+if [ -s "${CONFIRMED:-/dev/null}" ]; then
+  "$HERE/register-routines.sh" "$VAULT" || true
+fi

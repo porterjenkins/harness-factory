@@ -407,7 +407,13 @@ wire_routine_register() {
 
   {
     printf 'Register the following scheduled routines for this vault.\n\n'
-    printf 'For each one, create a Claude Code scheduled task with the given task ID,\n'
+    printf '**Run this in Claude Desktop (agent mode), not the Claude Code CLI.** The\n'
+    printf 'tool that creates a LOCAL scheduled task (`create_scheduled_task`) ships\n'
+    printf 'with Desktop agent mode. The CLI does not have it; what the CLI has is\n'
+    printf '`RemoteTrigger`, which creates a CLOUD routine that runs in a remote\n'
+    printf 'sandbox and cannot reach this vault on disk. A cloud routine here would\n'
+    printf 'register cleanly and then fail every run.\n\n'
+    printf 'For each routine below, create a scheduled task with the given task ID,\n'
     printf 'cron expression and prompt body. If a task with that ID already exists,\n'
     printf 'update it rather than creating a duplicate. Report what you registered.\n\n'
     printf 'Vault: `%s`  (Obsidian vault name `%s`)\n\n---\n\n' "$VAULT" "$VAULT_NAME"

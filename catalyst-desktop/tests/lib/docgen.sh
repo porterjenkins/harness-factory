@@ -38,8 +38,15 @@ _tagged_date_for() {  # <date> <key>
 }
 
 _safe_title() {  # legal in a filename, and legal as a wikilink target
-  printf '%s' "$1" | sed -e 's/[\/:|#^\[\]]/-/g' -e 's/  */ /g' \
-    -e 's/^[[:space:].-]*//' -e 's/[[:space:].-]*$//'
+  # `tr`, not a sed bracket expression. The previous class was
+  # s/[\/:|#^\[\]]/-/g, which looks right and matches NOTHING: inside a POSIX
+  # bracket expression a backslash is literal, not an escape, so every one of
+  # those characters passed through untouched. The visible symptom was a title
+  # like "Northbeam/Atlas Decision Log" creating a nested Northbeam/ directory
+  # under Projects/Northbeam/Atlas/ -- the slash became a path separator. A `|`
+  # would likewise have broken any wikilink pointing at the note.
+  printf '%s' "$1" | tr '\\/:|#^[]' '--------' \
+    | sed -e 's/  */ /g' -e 's/^[[:space:].-]*//' -e 's/[[:space:].-]*$//'
 }
 
 # ------------------------------------------------------------- phase 1: titles

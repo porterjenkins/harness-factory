@@ -108,11 +108,17 @@ done
 # it stating. Generated prose varies; the presence of each concept must not.
 if [ -s "$VAULT/CLAUDE.md" ]; then
   _absent=""
-  for _needle in ai-read-only ai-read-frontmatter-only ai-read-write \
-                 Projects Areas Resources Archive .system tagged_hash \
-                 sources.md; do
+  # The `ai-read-*` heading tags this used to require were retired in favour of
+  # real enforcement in .claude/settings*.json, and sources.md moved to the vault
+  # root as SOURCES.md. Asserting the old contract failed every vault the builder
+  # produces -- the verifier was the stale half, not the build.
+  for _needle in Projects Areas Resources Archive .system tagged_hash; do
     grep -qF "$_needle" "$VAULT/CLAUDE.md" || _absent="$_absent $_needle"
   done
+  grep -qiE 'SOURCES\.md|sources\.md' "$VAULT/CLAUDE.md" \
+    || _absent="$_absent sources-registry"
+  grep -qiE 'settings.*\.json|permission' "$VAULT/CLAUDE.md" \
+    || _absent="$_absent permission-enforcement" 
   grep -qiE 'log-[Y0-9]{4}-[M0-9]{2}\.csv|log-YYYY-MM' "$VAULT/CLAUDE.md" \
     || _absent="$_absent log-YYYY-MM.csv"
   grep -qiE 'timestamp\|action\|path\|summary' "$VAULT/CLAUDE.md" \
@@ -123,11 +129,16 @@ if [ -s "$VAULT/CLAUDE.md" ]; then
   if [ -z "$_absent" ]; then pass "CLAUDE.md states every required invariant"
   else bad "CLAUDE.md never mentions:$_absent"; fi
 
-  # The vault name must be discoverable but never baked in as an absolute path.
+  # Either spelling is correct. Naming the basename is convenient; explaining
+  # that the name IS the folder basename is what the live vault does on purpose,
+  # so it survives being renamed or handed to someone else. What must not happen
+  # is neither -- then doc-retrieval has nothing to resolve.
   if grep -qF "$(basename "$VAULT")" "$VAULT/CLAUDE.md"; then
     pass "CLAUDE.md names the vault basename for vault=<vault-name>"
+  elif grep -qiE 'basename|folder name' "$VAULT/CLAUDE.md"; then
+    pass "CLAUDE.md defines vault=<vault-name> as the folder basename (not hardcoded)"
   else
-    soft "CLAUDE.md never names the vault basename ($(basename "$VAULT")); doc-retrieval has nothing to substitute"
+    bad "CLAUDE.md neither names the vault basename nor says it is the folder basename"
   fi
 fi
 
@@ -264,10 +275,15 @@ else
   bad "no .system/log/log-*.csv"
 fi
 
-if grep -q '^| role | source | notes |' "$VAULT/.system/sources.md" 2>/dev/null; then
-  pass "sources.md role table"
+# The registry lives at the vault root once the builder has run, and at
+# .system/sources.md in a sandbox that has not been built into yet. Either is
+# valid; neither is not.
+if grep -q '^| role | source | notes |' "$VAULT/SOURCES.md" 2>/dev/null; then
+  pass "SOURCES.md role table (vault root)"
+elif grep -q '^| role | source | notes |' "$VAULT/.system/sources.md" 2>/dev/null; then
+  pass "sources.md role table (.system/, pre-build sandbox)"
 else
-  bad ".system/sources.md missing or has no role table"
+  bad "no role table in SOURCES.md or .system/sources.md"
 fi
 
 if grep -q "Resources/Meetings" "$VAULT/.claude/settings.local.json" 2>/dev/null; then

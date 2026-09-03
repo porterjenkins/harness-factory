@@ -70,6 +70,17 @@ $_n
   done
   [ -n "$_dropped" ] && info "skills not requested, removed:$_dropped"
 
+  # The sandbox scaffolder leaves a placeholder README in Skills/ and Routines/
+  # saying they are "intentionally empty" and that the build installs the real
+  # content. Once it has, that note is not just stale but actively wrong. Only a
+  # file carrying that exact phrase is removed -- never a README somebody wrote.
+  for _rm in "$VAULT/Skills/README.md" "$VAULT/Routines/README.md"; do
+    if [ -f "$_rm" ] && grep -q "Intentionally empty" "$_rm" 2>/dev/null; then
+      rm -f "$_rm"
+      info "removed the sandbox placeholder $(basename "$(dirname "$_rm")")/README.md (now inaccurate)"
+    fi
+  done
+
   ok "payload installed ($(find "$VAULT/Skills" -name SKILL.md | wc -l | tr -d ' ') skills, $(find "$VAULT/.system" -type f | wc -l | tr -d ' ') machinery files)"
 }
 

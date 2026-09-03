@@ -9,6 +9,9 @@ colleagues, meetings and notes — is fiction, simulated with `claude -p`.
 ./sandbox-verify.sh                              # assert the fixture is sound
 ./sandbox-ls.sh                                  # what exists on this machine
 ./sandbox-down.sh --vault ~/catalyst-sandboxes/maya-work
+
+./build-into-sandbox.sh --persona default --tag 8   # the end-to-end test
+./persona-to-template.sh default > /tmp/t.md        # persona -> build template
 ```
 
 Sandboxes land in `~/catalyst-sandboxes/<vault-name>` unless you pass `--out`.
@@ -47,6 +50,30 @@ Two consequences worth knowing:
   `_normalize_weekly` in `lib/docgen.sh`). About one note in forty comes back
   missing a section heading; the skeleton is a template contract, so it is
   enforced rather than left to chance.
+
+## Building into a sandbox
+
+`build-into-sandbox.sh` is the end-to-end test: generate a populated vault, derive
+a build template from the same persona, build into it, then require **both**
+verifiers to pass on the result — the builder owns the configuration, the sandbox
+owns the content, and neither may break the other's contract. Pass `--tag N` to
+also run a real tagging sample.
+
+This is the only way the tagging phase means anything. `build-vault.sh` on an
+empty directory can seed nothing but stub notes, so it proves the plumbing and
+nothing about tag quality; against this corpus the tagger converges on vocabulary
+drawn from the persona's own projects (`northbeam`, `tidewater`, `palletgeist`).
+
+The order is forced and cannot be reversed: `sandbox-up.sh` refuses to touch a
+directory without its own marker, and it deliberately leaves `Skills/` and
+`Routines/` empty for the build to fill. The build needs `--force` because the
+directory is non-empty by design; it backs up anything it would overwrite first,
+and retires the placeholder READMEs it has just made untrue.
+
+`persona-to-template.sh` is the translation between the two halves — the persona is
+the sandbox's identity, the template is the builder's input, and they describe the
+same things in different shapes. It is a translation, not a second source of
+truth: edit the persona and regenerate.
 
 ## What you get
 

@@ -158,6 +158,7 @@ _hyd_contributes() {
     memory:code)              printf 'commits, branches, review activity → `MEMORY.md`' ;;
     memory:vault)             printf 'the week'"'"'s notes, plans and meetings → `MEMORY.md`' ;;
     prioritization-reranker:vault) printf '`PRIORITIES.md`, recent Daily notes → priority tag + `P(completion)`' ;;
+    action-item-classifier:vault)  printf 'candidate action items → kept or discarded on the 2-of-4 bar' ;;
     doc-retrieval:vault)      printf 'note bodies, tags and links → search results' ;;
     tag-lint:vault)           printf 'the tag vocabulary and its counts → merge recommendations' ;;
     log-manager:vault)        printf '`.system/log/log-YYYY-MM.csv` → recent-activity answers' ;;
@@ -186,10 +187,21 @@ range, and writes it where the right side points.
 | skill | role | contributes | required |
 | --- | --- | --- | --- |
 EOF
-  # System skills read the vault and nothing else.
+  # System skills always read the vault. Most read nothing else -- but `memory`
+  # pulls from `code` when a repository is connected, so an optional `Sources:`
+  # under a system skill is honoured rather than ignored. Without this the memory
+  # skill's git-reading step would install with no role wired and silently never
+  # run.
   tmpl_skill_names skills__system | while read -r _sk; do
     [ -n "$_sk" ] || continue
     printf '| `%s` | `vault` | %s | always |\n' "$_sk" "$(_hyd_contributes "$_sk" vault)"
+    { tmpl_alias_attr skills__system "$_sk" Sources | tr ',' '\n' \
+      | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/`//g' \
+      | grep -v '^$' || true; } | while read -r _role; do
+        [ "$_role" = "vault" ] && continue
+        printf '| `%s` | `%s` | %s | %s |\n' \
+          "$_sk" "$_role" "$(_hyd_contributes "$_sk" "$_role")" "$(_hyd_required "$_role")"
+      done
   done
   # User skills read the vault plus whatever roles the template gave them.
   tmpl_skill_names skills__user | while read -r _sk; do

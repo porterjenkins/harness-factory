@@ -226,6 +226,8 @@ fi
 _rn=0; _rbad=""
 for _f in "$VAULT"/Routines/*.md; do
   [ -f "$_f" ] || continue
+  # A README explaining the directory is not a routine and has no Schedule.
+  case "$(basename "$_f")" in README.md|readme.md) continue ;; esac
   _rn=$(( _rn + 1 ))
   _stem="$(basename "$_f" .md)"
   grep -q '^## Schedule' "$_f" || { _rbad="$_rbad $_stem(no-Schedule)"; continue; }

@@ -130,10 +130,16 @@ _tmpl_validate() {
   # exist. Catch it here, naming the skill, rather than at the verify gate.
   rm -f "$TMPL_DIR/.undeclared"
   _declared="$(tmpl_roles | cut -d'|' -f1)"
-  tmpl_skill_names skills__user | while read -r _sk; do
+  { tmpl_skill_names skills__system; tmpl_skill_names skills__user; } | while read -r _sk; do
     [ -n "$_sk" ] || continue
-    tmpl_alias_attr skills__user "$_sk" Sources | tr ',' '\n' \
-      | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/`//g' | grep -v '^$' \
+    # `|| true`: a skill with an empty `Sources:` -- every skill, for a persona
+    # with nothing connected -- makes this grep match nothing and exit 1, which
+    # under `set -o pipefail` kills the whole build with no message. Second time
+    # this exact trap has fired; it is the one documented in tests/README.md.
+    { { tmpl_alias_attr skills__user "$_sk" Sources
+        tmpl_alias_attr skills__system "$_sk" Sources; } | tr ',' '\n' \
+      | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/`//g' \
+      | grep -v '^$' || true; } \
       | while read -r _role; do
           case " $TMPL_INTRINSIC_ROLES " in *" $_role "*) continue ;; esac
           printf '%s\n' "$_declared" | grep -qx "$_role" \

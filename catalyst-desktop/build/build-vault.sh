@@ -100,7 +100,13 @@ trap cleanup EXIT
 template_load "$TEMPLATE" "$WORK"
 
 case "$OUT" in /*) VAULT="$OUT" ;; *) VAULT="$(pwd)/$OUT" ;; esac
-VAULT="${VAULT%/}"
+# Collapse repeated slashes and strip any trailing one. This is not cosmetic:
+# .claude/settings.local.json embeds the absolute vault path in its deny glob,
+# and build-verify.sh canonicalises with `cd && pwd` before comparing. A path
+# like `$TMPDIR/vault` -- where TMPDIR already ends in `/` -- produced a glob
+# with `//` in it that matched nothing, leaving the Resources/Meetings write
+# protection silently inert.
+VAULT="$(printf '%s' "$VAULT" | sed -e 's|//*|/|g' -e 's|/$||')"
 [ -n "$VAULT_NAME" ] || VAULT_NAME="$(basename "$VAULT")"
 
 info "template   $TEMPLATE"
@@ -157,6 +163,9 @@ else
   info "target is empty"
 fi
 mkdir -p "$VAULT"
+# Now that it exists, resolve it the same way every consumer does -- symlinks and
+# `..` included -- so the path baked into the deny glob is the canonical one.
+VAULT="$(cd "$VAULT" && pwd)"
 
 jobs_init "$WORK/status"
 llm_init "$WORK"

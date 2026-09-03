@@ -33,9 +33,19 @@
 # Skills
 
 ### System
+<!-- Always installed. These are invoked by other skills and by the routines
+     rather than by the user directly, so most have nothing to configure. The
+     exception is `memory`, which reads `code` when a repository is connected —
+     leave its Sources empty if not. -->
+
 - `doc-retrieval`
 - `tag-lint`
 - `log-manager`
+- `action-item-classifier`
+- `prioritization-reranker`
+- `memory`
+    - Sources:
+
 ### User
 - `daily-plan`
     - Sources:

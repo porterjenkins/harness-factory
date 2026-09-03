@@ -58,8 +58,17 @@ done
 # each concept must not.
 if [ -s "$VAULT/CLAUDE.md" ]; then
   _absent=""
-  for _c in "Projects/" "Areas/" "Resources/" "Archive/" ".system" \
-            "tagged_hash" "settings" "vault=" "log-" ; do
+  # Literal keys and paths, where the exact spelling IS the contract.
+  for _c in "tagged_hash" ".system" "vault=" "log-" "settings"; do
+    grep -qF "$_c" "$VAULT/CLAUDE.md" || _absent="$_absent $_c"
+  done
+  # PARA directories, matched WITHOUT a required trailing slash. The invariant is
+  # that CLAUDE.md describes the directory; whether the model writes `Archive/`,
+  # `# Archive` or "the Archive folder" is its own formatting choice. Requiring
+  # the literal "Archive/" failed builds whose CLAUDE.md was perfectly correct --
+  # and passed others only by luck, since the same prompt yields both spellings.
+  # A gate that fires on punctuation is a gate people learn to ignore.
+  for _c in Projects Areas Resources Archive; do
     grep -qF "$_c" "$VAULT/CLAUDE.md" || _absent="$_absent $_c"
   done
   [ -z "$_absent" ] && pass "CLAUDE.md states every required invariant" \

@@ -112,6 +112,18 @@ so swapping a tool is an edit here rather than a rewrite of every skill.
 | role | source | notes |
 | --- | --- | --- |
 EOF
+  # `vault` is always available -- it is the vault itself -- so an intake form has
+  # no reason to ask about it and this template does not. But every skill depends
+  # on it and the Who-reads-what table below cites it, so the registry has to
+  # declare it or the two tables disagree about which roles exist.
+  tmpl_role_source vault | grep -q . || printf '| vault | local filesystem | this vault; always available |\n'
+  # `web` is likewise intrinsic -- web search rather than a configured connector.
+  # It only gets a row when a skill actually asked for it.
+  if ! tmpl_role_source web | grep -q . \
+     && tmpl_skill_names skills__user | while read -r _s2; do
+          tmpl_alias_attr skills__user "$_s2" Sources; done | grep -q 'web'; then
+    printf '| web | web search | available when the session has web access |\n'
+  fi
   tmpl_roles | while IFS='|' read -r _r _s _n; do
     [ -n "$_r" ] || continue
     # A literal pipe in a notes cell would add a column and break the table for
@@ -175,15 +187,15 @@ range, and writes it where the right side points.
 | --- | --- | --- | --- |
 EOF
   # System skills read the vault and nothing else.
-  tmpl_records skills__system | cut -d'|' -f1 | while read -r _sk; do
+  tmpl_skill_names skills__system | while read -r _sk; do
     [ -n "$_sk" ] || continue
     printf '| `%s` | `vault` | %s | always |\n' "$_sk" "$(_hyd_contributes "$_sk" vault)"
   done
   # User skills read the vault plus whatever roles the template gave them.
-  tmpl_records skills__user | cut -d'|' -f1 | while read -r _sk; do
+  tmpl_skill_names skills__user | while read -r _sk; do
     [ -n "$_sk" ] || continue
     printf '| `%s` | `vault` | %s | always |\n' "$_sk" "$(_hyd_contributes "$_sk" vault)"
-    _srcs="$(tmpl_attr skills__user "$_sk" Sources)"
+    _srcs="$(tmpl_alias_attr skills__user "$_sk" Sources)"
     # `|| true`: a skill whose `Sources:` is blank -- the state every unfilled
     # template ships in -- makes this grep match nothing and exit 1, which under
     # `set -o pipefail` aborts the entire build with no message.

@@ -54,7 +54,7 @@ wire_payload() {
   # Skills the template did not ask for are removed rather than left inert: a
   # SKILL.md on disk is discoverable, and a skill whose sources were never
   # configured will run and produce a confidently empty answer.
-  _want="$(tmpl_records skills__system | cut -d'|' -f1; tmpl_records skills__user | cut -d'|' -f1)"
+  _want="$(tmpl_skill_names skills__system; tmpl_skill_names skills__user)"
   _dropped=""
   for _d in "$VAULT/Skills"/*/; do
     [ -d "$_d" ] || continue
@@ -364,14 +364,14 @@ _wire_cron_human() {
 # running is worse than no doc.
 wire_routines() {
   ROUTINE_PLAN="$WORK/routines.txt"; : > "$ROUTINE_PLAN"
-  tmpl_records routines | cut -d'|' -f1 | while read -r _r; do
+  tmpl_routine_names | while read -r _r; do
     [ -n "$_r" ] || continue
     _doc="$VAULT/Routines/$_r.md"
     if [ ! -f "$_doc" ]; then
       warn "no bundled routine doc for '$_r' -- skipping"
       continue
     fi
-    _freq="$(tmpl_attr routines "$_r" Frequency)"
+    _freq="$(tmpl_alias_attr routines "$_r" Frequency)"
     _cron="$(wire_cron_of "${_freq:-daily 6:00am}")"
     printf '%s|%s|%s\n' "$_r" "$_cron" "$_freq" >> "$ROUTINE_PLAN"
 
@@ -479,7 +479,7 @@ wire_resolve_platform() {
     *)                      _detected=unknown ;;
   esac
 
-  _want="$(tmpl_kv platform OS | tr '[:upper:]' '[:lower:]')"
+  _want="$(tmpl_platform_raw | tr '[:upper:]' '[:lower:]')"
   case "${_want:-auto}" in
     ""|auto)          PLATFORM="$_detected" ;;
     macos|mac|darwin) PLATFORM=macos ;;

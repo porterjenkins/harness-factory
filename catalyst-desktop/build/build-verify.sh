@@ -112,6 +112,18 @@ if [ -s "$VAULT/SOURCES.md" ]; then
       && pass "Who-reads-what table: $_wr row(s), every contributes cell has an arrow" \
       || bad "$_noarrow Who-reads-what row(s) have no → in contributes -- the cell is the whole instruction"
 
+    # Every role the skill table cites must have a row in the registry above.
+    # Without this the two tables can disagree about which roles exist, and a
+    # skill resolves a role that nothing defines.
+    _undef=""
+    for _r in $(grep -o '^| `[a-z-]*` | `[a-z-]*`' "$VAULT/SOURCES.md" \
+                | awk '{print $4}' | tr -d '|` ' | sort -u); do
+      [ -n "$_r" ] || continue
+      printf '%s\n' "$_roles" | grep -qx "$_r" || _undef="$_undef $_r"
+    done
+    [ -z "$_undef" ] && pass "every role cited by a skill has a registry row" \
+                     || bad "skill table cites role(s) with no registry row:$_undef"
+
     # Every skill named in the table must actually be installed.
     _ghost=""
     grep -o '^| `[a-z-]*`' "$VAULT/SOURCES.md" | tr -d '|` ' | sort -u | while read -r _sk; do

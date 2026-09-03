@@ -23,11 +23,16 @@ TMPL_USER="user-profile-and-preferences"
 # Every H1 the build knows how to act on. A template missing one of the required
 # names is rejected; the optional ones default to off when absent or empty.
 TMPL_REQUIRED="User Profile and Preferences|Projects|Areas|Sources|Skills|Routines|Connectors|Priorities"
-TMPL_OPTIONAL="Import|Tag Vocabulary|Sync|Platform"
+TMPL_OPTIONAL="Import|Tag Vocabulary|Sync|Platform|Operating System"
 
 # Roles the SOURCES.md registry understands. A row naming anything else is a typo,
 # and a typo'd role is indistinguishable from a disconnected one at run time.
 TMPL_KNOWN_ROLES="vault meetings calendar chat email issues code second-vault memory web"
+
+# Roles that are not connectors and so are never interviewed about: the vault is
+# the vault, `web` is web search, `memory` is a file at the vault root. They are
+# injected into the registry when the template omits them, which it usually does.
+TMPL_INTRINSIC_ROLES="vault web memory"
 
 TMPL_DIR=""
 
@@ -76,8 +81,12 @@ template_load() {
       sub(/^-/, "", s); sub(/-$/, "", s)
       return s
     }
-    /^# /   { h1 = slug(substr($0, 3)); h3 = ""; next }
-    /^### / { if (h1 != "") h3 = h1 "__" slug(substr($0, 5)); next }
+    # Touch the file at heading time. Creating it only when a line is written
+    # makes a present-but-empty section indistinguishable from a missing one, and
+    # an interview template arrives with most sections blank -- so validation
+    # would reject the very document it is meant to accept.
+    /^# /   { h1 = slug(substr($0, 3)); h3 = ""; printf "" >> (dir "/" h1 ".md"); next }
+    /^### / { if (h1 != "") { h3 = h1 "__" slug(substr($0, 5)); printf "" >> (dir "/" h3 ".md") } next }
     /^## /  { h3 = ""; next }
     {
       if (h1 != "") print $0 >> (dir "/" h1 ".md")
@@ -116,6 +125,32 @@ _tmpl_validate() {
       *) printf '%s\n' "$_role" >> "$TMPL_DIR/.badroles" ;;
     esac
   done
+  # A skill citing a role the registry never declares resolves to nothing at run
+  # time, and the two SOURCES.md tables end up disagreeing about which roles
+  # exist. Catch it here, naming the skill, rather than at the verify gate.
+  rm -f "$TMPL_DIR/.undeclared"
+  _declared="$(tmpl_roles | cut -d'|' -f1)"
+  tmpl_skill_names skills__user | while read -r _sk; do
+    [ -n "$_sk" ] || continue
+    tmpl_alias_attr skills__user "$_sk" Sources | tr ',' '\n' \
+      | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/`//g' | grep -v '^$' \
+      | while read -r _role; do
+          case " $TMPL_INTRINSIC_ROLES " in *" $_role "*) continue ;; esac
+          printf '%s\n' "$_declared" | grep -qx "$_role" \
+            || printf '%s names role "%s"\n' "$_sk" "$_role" >> "$TMPL_DIR/.undeclared"
+        done
+  done
+  if [ -s "$TMPL_DIR/.undeclared" ]; then
+    _u="$(sort -u "$TMPL_DIR/.undeclared" | sed 's/^/         /')"
+    rm -f "$TMPL_DIR/.undeclared"
+    die "a skill names a role that # Sources does not declare:
+
+$_u
+
+       Add a row for it under # Sources (set it to \`none\` if it is not
+       connected), or remove it from that skill's Sources list."
+  fi
+
   if [ -s "$TMPL_DIR/.badroles" ]; then
     _bad="$(tr '\n' ' ' < "$TMPL_DIR/.badroles")"
     rm -f "$TMPL_DIR/.badroles"
@@ -144,7 +179,9 @@ tmpl_records() {
     /^-[[:space:]]/ {
       line = substr($0, 3)
       n = split(line, f, "|")
-      for (i = 1; i <= n; i++) gsub(/^[[:space:]]+|[[:space:]]+$/, "", f[i])
+      # Strip backticks: `daily-plan` in the template is the skill daily-plan,
+      # and a name kept as "`daily-plan`" matches no directory on disk.
+      for (i = 1; i <= n; i++) { gsub(/`/, "", f[i]); gsub(/^[[:space:]]+|[[:space:]]+$/, "", f[i]) }
       if (f[1] == "") next
       printf "%s|%s|%s\n", f[1], (n > 1 ? f[2] : ""), (n > 2 ? f[3] : "")
     }
@@ -157,7 +194,7 @@ tmpl_records() {
 tmpl_children() {
   _f="$(_tmpl_file "$1")"; [ -n "$_f" ] || return 0
   awk -v want="$2" '
-    function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+    function trim(s) { gsub(/`/, "", s); gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
     /^-[[:space:]]/ {
       line = substr($0, 3); split(line, f, "|")
       cur = trim(f[1]); sub(/:$/, "", cur); next
@@ -178,7 +215,7 @@ tmpl_children() {
 tmpl_attr() {
   _f="$(_tmpl_file "$1")"; [ -n "$_f" ] || return 0
   awk -v want="$2" -v key="$3" '
-    function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+    function trim(s) { gsub(/`/, "", s); gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
     /^-[[:space:]]/ { line = substr($0, 3); split(line, f, "|"); cur = trim(f[1]); sub(/:$/, "", cur); next }
     /^[[:space:]]+-[[:space:]]/ {
       if (cur != want) next
@@ -195,7 +232,7 @@ tmpl_attr() {
 tmpl_kv() {
   _f="$(_tmpl_file "$1")"; [ -n "$_f" ] || return 0
   awk -v key="$2" '
-    function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+    function trim(s) { gsub(/`/, "", s); gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
     /^-[[:space:]]/ {
       line = substr($0, 3)
       i = index(line, ":")
@@ -209,33 +246,61 @@ tmpl_kv() {
   ' "$_f"
 }
 
+# Human labels an interviewer actually writes, mapped to the registry's role
+# names. Nobody filling in an intake form should have to know that the chat role
+# is spelled `chat` and not `Messaging`, and a rejected template is a worse
+# outcome than a lenient parser. Parenthetical hints are stripped first, so
+# `Project management (linear, notion, monday.com)` resolves to `issues`.
+_tmpl_role_alias() {
+  _ra="$(printf '%s' "$1" | sed -e 's/(.*)//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+        | tr '[:upper:]' '[:lower:]')"
+  case "$_ra" in
+    email|e-mail|mail|inbox)                        printf 'email' ;;
+    messaging|chat|slack|teams|telegram|dm|dms)     printf 'chat' ;;
+    meetings|meeting|meeting\ notes|transcripts)    printf 'meetings' ;;
+    calendar|cal|schedule)                          printf 'calendar' ;;
+    project\ management|issues|tickets|pm|issue\ tracker) printf 'issues' ;;
+    code|repo|repos|git|source\ control)            printf 'code' ;;
+    second\ vault|second-vault|team\ vault|second\ knowledge\ base) printf 'second-vault' ;;
+    vault|this\ vault|filesystem|local\ filesystem)  printf 'vault' ;;
+    memory)                                         printf 'memory' ;;
+    web|news|web\ search)                           printf 'web' ;;
+    *)                                              printf '%s' "$_ra" ;;
+  esac
+}
+
 # tmpl_roles -> `role|source|notes` from # Sources.
 # An unfilled `- role:` with no value reads as `none`, which is the honest default:
 # a role nobody recorded an answer for is not connected.
 tmpl_roles() {
   _f="$(_tmpl_file sources)"; [ -n "$_f" ] || return 0
   awk '
-    function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+    function trim(s) { gsub(/`/, "", s); gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
     /^-[[:space:]]/ {
       line = substr($0, 3)
       i = index(line, ":")
-      if (i == 0) next
-      role = trim(substr(line, 1, i - 1))
-      rest = substr(line, i + 1)
+      # A role written with no colon at all ("- Project management (linear, ...)")
+      # is a role nobody filled in, not a line to drop. Dropping it silently
+      # removes the role from the registry, and a role with no row is invisible.
+      if (i == 0) { role = trim(line); rest = "" }
+      else { role = trim(substr(line, 1, i - 1)); rest = substr(line, i + 1) }
       n = split(rest, f, "|")
       src = trim(f[1]); notes = (n > 1 ? trim(f[2]) : "")
       for (i = 3; i <= n; i++) notes = notes " | " trim(f[i])
       if (src == "") src = "none"
       printf "%s|%s|%s\n", role, src, notes
     }
-  ' "$_f"
+  ' "$_f" | while IFS='|' read -r _r _s _n; do
+      [ -n "$_r" ] || continue
+      printf '%s|%s|%s\n' "$(_tmpl_role_alias "$_r")" "$_s" "$_n"
+    done
 }
 
 # tmpl_numbered <slug> -> items of an ordered list, numbering stripped.
 tmpl_numbered() {
   _f="$(_tmpl_file "$1")"; [ -n "$_f" ] || return 0
   awk '
-    function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+    function trim(s) { gsub(/`/, "", s); gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
     /^[0-9]+\.[[:space:]]/ { sub(/^[0-9]+\.[[:space:]]*/, ""); if (trim($0) != "") print trim($0) }
   ' "$_f"
 }
@@ -256,6 +321,73 @@ tmpl_prose() {
 tmpl_has() {
   _f="$(_tmpl_file "$1")"; [ -n "$_f" ] || return 1
   [ -n "$(tr -d '[:space:]' < "$_f")" ]
+}
+
+# Shorthand an interviewer will reach for, mapped to what is actually installed.
+# `weekly-plan` is the natural way to say it; `weekly-planning` is the directory
+# name. Without this the skill silently fails to install and SOURCES.md names a
+# skill that is not on disk.
+tmpl_skill_names() {
+  tmpl_records "$1" | cut -d'|' -f1 | while read -r _sk; do
+    [ -n "$_sk" ] || continue
+    case "$_sk" in
+      weekly-plan|weekly-planning) printf 'weekly-planning\n' ;;
+      daily-plan|daily-planning)   printf 'daily-plan\n' ;;
+      meeting-prep|meeting-preparation) printf 'meeting-prep\n' ;;
+      *) printf '%s\n' "$_sk" ;;
+    esac
+  done
+}
+
+# Same, for routine docs. `weekly-plan-update` is what people say; the bundled
+# doc is `weekly-plan-daily-update`.
+tmpl_routine_names() {
+  tmpl_records routines | cut -d'|' -f1 | while read -r _rt; do
+    [ -n "$_rt" ] || continue
+    case "$_rt" in
+      weekly-plan-update|weekly-plan-daily-update) printf 'weekly-plan-daily-update\n' ;;
+      weekly-memory|memory)                        printf 'memory\n' ;;
+      *) printf '%s\n' "$_rt" ;;
+    esac
+  done
+}
+
+# The template may name this section `# Platform` or `# Operating System`; both
+# are natural, and the second is what the intake form actually says.
+tmpl_platform_raw() {
+  _v="$(tmpl_kv platform OS)"
+  [ -n "$_v" ] || _v="$(tmpl_kv operating-system OS)"
+  # `# Operating System (windows vs macos)` with a bare value under it, or the
+  # heading's own parenthetical left unfilled, both read as unset.
+  if [ -z "$_v" ] && tmpl_has operating-system; then
+    _v="$(tmpl_prose operating-system | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+    case "$_v" in *windowsvsmacos*|"") _v="" ;; esac
+  fi
+  printf '%s' "$_v"
+}
+
+# The alias accessors return canonical names, but the template still holds
+# whatever the interviewer wrote -- so a nested `Sources:` or `Frequency:` under
+# `weekly-plan` is invisible to a lookup for `weekly-planning`. These resolve the
+# attribute by trying every spelling that maps to the canonical name.
+_tmpl_variants() {
+  case "$1" in
+    weekly-planning)          printf 'weekly-planning weekly-plan' ;;
+    daily-plan)               printf 'daily-plan daily-planning' ;;
+    meeting-prep)             printf 'meeting-prep meeting-preparation' ;;
+    weekly-plan-daily-update) printf 'weekly-plan-daily-update weekly-plan-update' ;;
+    memory)                   printf 'memory weekly-memory' ;;
+    *)                        printf '%s' "$1" ;;
+  esac
+}
+
+# tmpl_alias_attr <scope> <canonical-name> <Key>
+tmpl_alias_attr() {
+  for _cand in $(_tmpl_variants "$2"); do
+    _av="$(tmpl_attr "$1" "$_cand" "$3")"
+    [ -n "$_av" ] && { printf '%s' "$_av"; return 0; }
+  done
+  return 0
 }
 
 # ------------------------------------------------------------ derived readings

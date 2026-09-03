@@ -110,7 +110,7 @@ info "owner      $(tmpl_kv "$TMPL_USER" Name)"
 info "projects   $(tmpl_project_paths | tr '\n' ' ')"
 info "areas      $(tmpl_area_names | tr '\n' ' ')"
 info "connected  $(tmpl_roles | awk -F'|' '$2 != "none" && $2 != "" { printf "%s ", $1 }')"
-info "skills     $(tmpl_records skills__system | cut -d'|' -f1 | tr '\n' ' ')$(tmpl_records skills__user | cut -d'|' -f1 | tr '\n' ' ')"
+info "skills     $(tmpl_skill_names skills__system | tr '\n' ' ')$(tmpl_skill_names skills__user | tr '\n' ' ')"
 wire_resolve_platform
 
 # .system/wiki/config.py derives VAULT_NAME from the folder basename. If --name
@@ -130,8 +130,8 @@ if [ "$DRY_RUN" = "1" ]; then
   echo
   info "would write: CLAUDE.md USER.md SOURCES.md PRIORITIES.md MEMORY.md"
   info "routines:"
-  tmpl_records routines | cut -d'|' -f1 | while read -r _r; do
-    [ -n "$_r" ] && printf '   %-28s %s\n' "$_r" "$(wire_cron_of "$(tmpl_attr routines "$_r" Frequency)")"
+  tmpl_routine_names | while read -r _r; do
+    [ -n "$_r" ] && printf '   %-28s %s\n' "$_r" "$(wire_cron_of "$(tmpl_alias_attr routines "$_r" Frequency)")"
   done
   exit 0
 fi

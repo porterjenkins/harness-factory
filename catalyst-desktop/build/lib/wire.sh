@@ -461,3 +461,124 @@ wire_routine_register() {
 
   ok "registration prompt written to .system/routines-register.md"
 }
+
+# ------------------------------------------------------------------- platform
+
+# Resolve the target platform from the template, defaulting to the host.
+#
+# This is an assertion, not a cross-compile switch: the build installs background
+# jobs on the machine it is running on, so a template claiming `windows` while
+# running on a Mac cannot be satisfied. Failing loudly beats installing the wrong
+# scheduler and discovering it when the job never fires.
+wire_resolve_platform() {
+  _host="$(uname -s 2>/dev/null || echo unknown)"
+  case "$_host" in
+    Darwin)                 _detected=macos ;;
+    MINGW*|MSYS*|CYGWIN*)   _detected=windows ;;
+    Linux)                  _detected=linux ;;
+    *)                      _detected=unknown ;;
+  esac
+
+  _want="$(tmpl_kv platform OS | tr '[:upper:]' '[:lower:]')"
+  case "${_want:-auto}" in
+    ""|auto)          PLATFORM="$_detected" ;;
+    macos|mac|darwin) PLATFORM=macos ;;
+    windows|win)      PLATFORM=windows ;;
+    linux)            PLATFORM=linux ;;
+    *) die "# Platform names an unknown OS: '$_want'
+       Use macos, windows, linux, or auto." ;;
+  esac
+
+  if [ "${_want:-auto}" != "auto" ] && [ -n "$_want" ] && [ "$PLATFORM" != "$_detected" ]; then
+    die "# Platform says '$PLATFORM' but this machine is '$_detected' ($_host).
+
+       The build installs the background jobs locally, so it cannot set up a
+       Windows Scheduled Task from macOS or a LaunchAgent from Windows. Run the
+       build on the target machine, or set '- OS: auto' in the template."
+  fi
+
+  info "platform   $PLATFORM$([ "${_want:-auto}" = "auto" ] && printf ' (detected)' || printf ' (declared)')"
+  case "$PLATFORM" in
+    macos)   info "           background jobs install as LaunchAgents" ;;
+    windows) info "           background jobs install as Scheduled Tasks (PowerShell script written)" ;;
+    *)       warn "           no scheduler integration for '$PLATFORM' -- jobs must be wired by hand" ;;
+  esac
+}
+
+# On Windows the build cannot call launchctl, so it emits the equivalent
+# PowerShell instead. Paths follow config.py exactly -- RUN_LOG_DIR is
+# `.system/log/run-logs`, and an earlier version of the wiki README dropped the
+# `log` segment, which sent every scheduled run's output to a directory nobody
+# reads.
+wire_windows_agents() {
+  _ps="$VAULT/.system/install-agents.ps1"
+  # A naive s|/|\| turns the MSYS path /c/Users/rob/vault into \c\Users\rob\vault
+  # -- no drive letter, so every path in the generated script is wrong. cygpath
+  # ships with Git Bash and MSYS and gets this right; the sed is the fallback.
+  if command -v cygpath >/dev/null 2>&1; then
+    _win_vault="$(cygpath -w "$VAULT")"
+  else
+    _win_vault="$(printf '%s' "$VAULT" | sed -e 's|^/\([a-zA-Z]\)/|\1:/|' -e 's|/|\\|g')"
+  fi
+  case "$_win_vault" in
+    [a-zA-Z]:*) ;;
+    *) warn "could not derive a Windows path from '$VAULT' (got '$_win_vault')."
+       info "  Edit \$vault at the top of .system/install-agents.ps1 before running it." ;;
+  esac
+  {
+    printf '# Register this vault'"'"'s background jobs as Windows Scheduled Tasks.\n'
+    printf '#\n'
+    printf '#   powershell -NoProfile -ExecutionPolicy Bypass -File .system\\install-agents.ps1\n'
+    printf '#\n'
+    printf '# Both tasks must run in your logged-on session -- the same reason the macOS\n'
+    printf '# jobs are LaunchAgents and not LaunchDaemons. Register-ScheduledTask with no\n'
+    printf '# -User/-Password defaults to "run only when the user is logged on", which is\n'
+    printf '# what you want. Do NOT switch it to "run whether the user is logged on or\n'
+    printf '# not": that lands in session 0 with no desktop, and every Obsidian call fails\n'
+    printf '# silently.\n\n'
+    printf '$vault = "%s"\n' "$_win_vault"
+    printf '$logs  = "$vault\\.system\\log\\run-logs"\n'
+    printf 'New-Item -ItemType Directory -Force -Path $logs | Out-Null\n\n'
+
+    printf '# --- Wiki ingestion, every 15 minutes ---------------------------------\n'
+    printf '$py = (Get-Command python).Source\n'
+    printf '$action = New-ScheduledTaskAction -Execute "cmd.exe" -WorkingDirectory $vault `\n'
+    printf '  -Argument "/c `%s$py`%s `%s$vault\\.system\\wiki\\cli.py`%s run >> `%s$logs\\ingest.out.log`%s 2>> `%s$logs\\ingest.err.log`%s"\n' '"' '"' '"' '"' '"' '"' '"' '"'
+    printf '$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `\n'
+    printf '  -RepetitionInterval (New-TimeSpan -Minutes 15) -RepetitionDuration ([TimeSpan]::MaxValue)\n'
+    printf '$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `\n'
+    printf '  -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -Priority 7\n'
+    printf 'Register-ScheduledTask -TaskName "wiki-ingest" -Action $action -Trigger $trigger `\n'
+    printf '  -Settings $settings -Force -Description "Wiki ingestion pass (.system/wiki/cli.py run)"\n\n'
+
+    if [ "${GRANOLA_WANTED:-0}" = "1" ]; then
+      printf '# --- Granola export, every 30 minutes ---------------------------------\n'
+      printf '$tool = "$vault\\.system\\connectors\\granola-export"\n'
+      printf '$gAction = New-ScheduledTaskAction -Execute "powershell.exe" -WorkingDirectory $tool `\n'
+      printf '  -Argument "-NoProfile -ExecutionPolicy Bypass -File `%s$tool\\run.ps1`%s -Log"\n' '"' '"'
+      printf '$gTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `\n'
+      printf '  -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration ([TimeSpan]::MaxValue)\n'
+      printf '$gSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `\n'
+      printf '  -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries\n'
+      printf 'Register-ScheduledTask -TaskName "granola-export" -Action $gAction -Trigger $gTrigger `\n'
+      printf '  -Settings $gSettings -Force -Description "Export Granola notes to the vault"\n\n'
+    fi
+
+    printf '# --- The one that will bite you ---------------------------------------\n'
+    printf '# `claude` is a .cmd shim. tagger.py invokes it through subprocess without a\n'
+    printf '# shell, which reaches CreateProcess -- that searches PATH but does NOT apply\n'
+    printf '# PATHEXT, so a bare `claude` dies with FileNotFoundError even though the same\n'
+    printf '# word works in your shell. `cli.py doctor` does not catch it: it probes with\n'
+    printf '# shutil.which, which DOES apply PATHEXT, so it reports PASS on a claude that\n'
+    printf '# subprocess cannot launch. Point the config at the full path, then prove it:\n'
+    printf '#\n'
+    printf '#   where.exe claude\n'
+    printf '#   setx WIKI_CLAUDE_BIN "$env:APPDATA\\npm\\claude.cmd"\n'
+    printf '#   python .system\\wiki\\cli.py run --max-tag 1\n'
+    printf '#   # then confirm a tagged_hash actually landed in a note on disk\n'
+    printf '#\n'
+    printf '# There is no WIKI_OBSIDIAN_BIN -- obsidian.py uses a socket, not a binary.\n\n'
+    printf 'Write-Host "Registered. Check with: Get-ScheduledTask -TaskName wiki-ingest | Get-ScheduledTaskInfo"\n'
+  } > "$_ps"
+  ok "Windows scheduled-task script written to .system/install-agents.ps1"
+}

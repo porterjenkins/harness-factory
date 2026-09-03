@@ -111,6 +111,7 @@ info "projects   $(tmpl_project_paths | tr '\n' ' ')"
 info "areas      $(tmpl_area_names | tr '\n' ' ')"
 info "connected  $(tmpl_roles | awk -F'|' '$2 != "none" && $2 != "" { printf "%s ", $1 }')"
 info "skills     $(tmpl_records skills__system | cut -d'|' -f1 | tr '\n' ' ')$(tmpl_records skills__user | cut -d'|' -f1 | tr '\n' ' ')"
+wire_resolve_platform
 
 # .system/wiki/config.py derives VAULT_NAME from the folder basename. If --name
 # disagrees, the skills say vault=<name> while the pipeline says vault=<basename>
@@ -192,12 +193,19 @@ wire_sync_exclusions
 
 rule "8/11  Connectors"
 wire_connectors
-if [ "$GRANOLA_READY" = "1" ] && [ "$INSTALL_AGENTS" = "1" ]; then
-  "$VAULT/.system/connectors/granola-export/install.sh" \
-    --label "$LABEL_PREFIX.granola-export" && ok "granola-export LaunchAgent installed (RunAtLoad fires it now)"
-elif [ "$GRANOLA_READY" = "1" ]; then
-  info "not installing the LaunchAgent (pass --install-agents). To do it yourself:"
-  info "  $VAULT/.system/connectors/granola-export/install.sh --label $LABEL_PREFIX.granola-export"
+GRANOLA_WANTED=0
+[ -n "$(tmpl_records connectors__meetings | cut -d'|' -f1 | grep -v '^none$' || true)" ] && GRANOLA_WANTED=1
+
+if [ "$PLATFORM" = "macos" ]; then
+  if [ "$GRANOLA_READY" = "1" ] && [ "$INSTALL_AGENTS" = "1" ]; then
+    "$VAULT/.system/connectors/granola-export/install.sh" \
+      --label "$LABEL_PREFIX.granola-export" && ok "granola-export LaunchAgent installed (RunAtLoad fires it now)"
+  elif [ "$GRANOLA_READY" = "1" ]; then
+    info "not installing the LaunchAgent (pass --install-agents). To do it yourself:"
+    info "  $VAULT/.system/connectors/granola-export/install.sh --label $LABEL_PREFIX.granola-export"
+  fi
+elif [ "$GRANOLA_WANTED" = "1" ]; then
+  info "windows: run.ps1 is the peer of run.sh; the scheduled task is written in phase 10"
 fi
 
 # ------------------------------------------------------------- 9/11  manifest
@@ -285,15 +293,31 @@ else
   wire_routine_register "$CONFIRMED"
 fi
 
-if [ "$INSTALL_AGENTS" = "1" ]; then
-  step "installing the ingestion LaunchAgent"
-  "$VAULT/.system/wiki/launchagent/install.sh" --label "$LABEL_PREFIX.wiki-ingest" \
-    && ok "ingestion LaunchAgent installed (every 15 min)"
-  info "status/uninstall need the label:  WIKI_LABEL=$LABEL_PREFIX.wiki-ingest .system/wiki/launchagent/status.sh"
-else
-  info "ingestion LaunchAgent not installed (pass --install-agents). To do it yourself:"
-  info "  $VAULT/.system/wiki/launchagent/install.sh --label $LABEL_PREFIX.wiki-ingest"
-fi
+case "$PLATFORM" in
+  macos)
+    if [ "$INSTALL_AGENTS" = "1" ]; then
+      step "installing the ingestion LaunchAgent"
+      "$VAULT/.system/wiki/launchagent/install.sh" --label "$LABEL_PREFIX.wiki-ingest" \
+        && ok "ingestion LaunchAgent installed (every 15 min)"
+      info "status/uninstall need the label:  WIKI_LABEL=$LABEL_PREFIX.wiki-ingest .system/wiki/launchagent/status.sh"
+    else
+      info "ingestion LaunchAgent not installed (pass --install-agents). To do it yourself:"
+      info "  $VAULT/.system/wiki/launchagent/install.sh --label $LABEL_PREFIX.wiki-ingest"
+    fi
+    ;;
+  windows)
+    # launchctl does not exist here, so the build emits the Task Scheduler
+    # equivalent rather than failing in the middle of an installer.
+    wire_windows_agents
+    info "run it to register both jobs:"
+    info "  powershell -NoProfile -ExecutionPolicy Bypass -File .system\\install-agents.ps1"
+    ;;
+  *)
+    warn "no scheduler integration for '$PLATFORM'."
+    info "  Run the ingestion pass yourself, or wire it to cron:"
+    info "  cd '$VAULT' && python3 .system/wiki/cli.py run"
+    ;;
+esac
 
 # --------------------------------------------------------------- 11/11  verify
 

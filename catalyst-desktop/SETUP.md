@@ -160,8 +160,8 @@ user, and records the confirmed list at `.system/routines-confirmed.txt`. It can
 
 | What | Mechanism | Scriptable? |
 | --- | --- | --- |
-| Granola export | `~/Library/LaunchAgents/<prefix>.granola-export.plist`, 30 min | **Yes** — `--install-agents` |
-| Wiki ingestion | `~/Library/LaunchAgents/<prefix>.wiki-ingest.plist`, 15 min | **Yes** — `--install-agents` |
+| Granola export | macOS: LaunchAgent, 30 min · Windows: Scheduled Task via the generated `.system/install-agents.ps1` | **Yes** |
+| Wiki ingestion | macOS: LaunchAgent, 15 min · Windows: same script | **Yes** |
 | Local scheduled tasks | `create_scheduled_task` — **Claude Desktop agent mode only** | **No** |
 | Cloud routines | `RemoteTrigger` → claude.ai, runs in a remote sandbox | Yes, but cannot reach a local vault |
 

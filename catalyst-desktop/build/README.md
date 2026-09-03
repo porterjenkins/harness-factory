@@ -27,7 +27,7 @@ Both `--template` and `--out` are required. Start from `TEMPLATE.md`.
 | `--jobs` | 4 | concurrent generations |
 | `--offline` | off | deterministic stubs, no model calls. The fast structural loop. |
 | `--no-cache` | cache on | prompt→body is cached under `~/.cache/catalyst-sandbox` |
-| `--install-agents` | off | actually install the LaunchAgents |
+| `--install-agents` | off | actually install the background jobs (macOS only; Windows always gets a script) |
 | `--skip-tagging` | off | build the vault, leave the manifest for later |
 | `--no-routines` | off | leave routine docs as bundled |
 | `--yes` / `-y` | off | confirm every routine without prompting |
@@ -51,6 +51,41 @@ reproduce a block verbatim, is what makes the guarantee real instead of hoped-fo
 an essay — two tables and a list wrapped in rules identical across every vault.
 Generating prose around them bought nothing and cost a real hazard: a level-1
 splice of `# Connected sources` swallows its own `## Who reads what` child.
+
+## Platform
+
+`# Platform` in the template picks how the two background jobs — wiki ingestion
+(15 min) and Granola export (30 min) — get installed:
+
+| `- OS:` | Behaviour |
+|---|---|
+| `auto` (default) | detect from `uname` |
+| `macos` | LaunchAgents, installed directly by `--install-agents` |
+| `windows` | writes `.system/install-agents.ps1` for Task Scheduler; nothing is registered for you |
+| `linux` | warns; no scheduler integration exists |
+
+Declaring an OS is an **assertion, not a cross-compile switch** — the build
+installs jobs on the machine it runs on, so a template saying `windows` while
+running on a Mac is a hard error rather than a silent no-op.
+
+Two Windows details the generated script carries, because both are silent
+failures otherwise:
+
+- **The run-log path is `.system\log\run-logs`.** An earlier version of
+  `.system/wiki/README.md` dropped the `log` segment, so scheduled output went to
+  a directory nobody reads. `config.py:28` is authoritative.
+- **`claude` is a `.cmd` shim.** `subprocess` reaches `CreateProcess`, which
+  searches `PATH` but does not apply `PATHEXT`, so a bare `claude` raises
+  `FileNotFoundError` even though the word works in a shell. `cli.py doctor`
+  probes with `shutil.which`, which *does* apply `PATHEXT` — so it reports PASS on
+  a `claude` that cannot actually launch. Set `WIKI_CLAUDE_BIN` to the full path
+  and prove it with `run --max-tag 1`. (There is no `WIKI_OBSIDIAN_BIN`;
+  `obsidian.py` uses a socket.)
+
+Path conversion uses `cygpath -w` when present, falling back to a sed that maps
+`/c/Users/...` to `c:\Users\...`. If neither yields a drive letter the build says
+so and tells you which line to edit — a naive `s|/|\|` would produce
+`\c\Users\...` and every path in the script would be wrong.
 
 ## Phases
 

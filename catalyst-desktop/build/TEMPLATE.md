@@ -133,6 +133,18 @@
 - Tags:
 
 
+# Platform
+
+<!-- Which OS this vault is being built on. Drives how the two background jobs get
+     installed: macOS uses LaunchAgents (installed directly by the build), Windows
+     uses Task Scheduler (the build writes a PowerShell script for you to run).
+     `auto` — the default — detects it from the host. Set it explicitly only to
+     assert what you expect; the build fails if the assertion is wrong, since you
+     cannot install a LaunchAgent from Windows or a Scheduled Task from macOS. -->
+
+- OS: auto
+
+
 # Sync
 
 <!-- Optional. Determines which exclusion rules get written. -->

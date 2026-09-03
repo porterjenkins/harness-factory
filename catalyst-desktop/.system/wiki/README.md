@@ -103,9 +103,13 @@ the same word works in your shell. Point the config at the full path:
 
 ```powershell
 where.exe claude          # confirm the location first; it depends on the installer
-setx WIKI_CLAUDE_BIN   "$env:APPDATA\npm\claude.cmd"
-setx WIKI_OBSIDIAN_BIN "$env:APPDATA\npm\obsidian.cmd"
+setx WIKI_CLAUDE_BIN "$env:APPDATA\npm\claude.cmd"
 ```
+
+Only `claude` needs this. There is no `WIKI_OBSIDIAN_BIN` -- `obsidian.py` talks to
+the app over a unix socket rather than spawning the CLI binary, so there is no
+path for it to resolve. An earlier version of this file told you to `setx` one;
+that variable is read by nothing.
 
 `setx` writes a user-level variable, which Task Scheduler inherits. Open a new
 shell before testing it.
@@ -127,7 +131,7 @@ one-to-one:
 ```powershell
 $vault = "<path-to-vault>"
 $py    = (Get-Command python).Source
-$logs  = "$vault\.system\run-logs"
+$logs  = "$vault\.system\log\run-logs"
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
 
 $action = New-ScheduledTaskAction -Execute "cmd.exe" -WorkingDirectory $vault `

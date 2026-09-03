@@ -23,7 +23,7 @@ TMPL_USER="user-profile-and-preferences"
 # Every H1 the build knows how to act on. A template missing one of the required
 # names is rejected; the optional ones default to off when absent or empty.
 TMPL_REQUIRED="User Profile and Preferences|Projects|Areas|Sources|Skills|Routines|Connectors|Priorities"
-TMPL_OPTIONAL="Import|Tag Vocabulary|Sync"
+TMPL_OPTIONAL="Import|Tag Vocabulary|Sync|Platform"
 
 # Roles the SOURCES.md registry understands. A row naming anything else is a typo,
 # and a typo'd role is indistinguishable from a disconnected one at run time.

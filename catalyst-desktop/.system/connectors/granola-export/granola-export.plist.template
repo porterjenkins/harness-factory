@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>__LABEL__</string>
+
+    <!-- launchd requires absolute paths here: it has no working directory to
+         resolve a relative one against, and ProgramArguments is exec'd directly.
+         Nothing in the repo hardcodes them -- install.sh derives __VAULT__ from
+         its own location at install time and substitutes it below. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__VAULT__/.system/connectors/granola-export/run.sh</string>
+    </array>
+
+    <!-- Run at load, then every __INTERVAL__ seconds. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>__INTERVAL__</integer>
+
+    <key>StandardOutPath</key>
+    <string>__VAULT__/.system/log/run-logs/granola-export.log</string>
+    <key>StandardErrorPath</key>
+    <string>__VAULT__/.system/log/run-logs/granola-export.log</string>
+</dict>
+</plist>

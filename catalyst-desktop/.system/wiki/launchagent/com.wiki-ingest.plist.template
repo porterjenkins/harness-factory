@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LABEL__</string>
+
+  <!-- A LaunchAgent, deliberately, not a LaunchDaemon. Only an Agent runs inside
+       the user's Aqua session, which is required to launch or talk to a GUI app.
+       A Daemon runs outside it and every Obsidian CLI call would fail silently. -->
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PYTHON__</string>
+    <string>__VAULT__/.system/wiki/cli.py</string>
+    <string>run</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__VAULT__</string>
+
+  <!-- launchd starts with a near-empty PATH. Without this, `obsidian` and
+       `claude` are both unfindable and the job fails with no useful error. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__PATH__</string>
+    <key>WIKI_VAULT_PATH</key>
+    <string>__VAULT__</string>
+    <key>WIKI_VAULT_NAME</key>
+    <string>__VAULT_NAME__</string>
+    <key>HOME</key>
+    <string>__HOME__</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>__INTERVAL__</integer>
+
+  <!-- Polling is cheap; tagging is not. The runner enforces its own per-run
+       ceiling and decides internally when the weekly sweep and monthly prune are
+       due, so this single job covers all three cadences. -->
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__VAULT__/.system/log/run-logs/ingest.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__VAULT__/.system/log/run-logs/ingest.err.log</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Nice</key>
+  <integer>5</integer>
+</dict>
+</plist>

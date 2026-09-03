@@ -1,0 +1,31 @@
+# Secrets. `.system/.env` is the single config file for every connector and
+# carries live API keys; only the committed template travels.
+.system/.env
+**/.system/.env
+.env
+!.env.example
+
+# Per-machine state that must never travel between vaults. A synced manifest
+# with two writers corrupts silently.
+manifest.sqlite
+manifest.sqlite-wal
+manifest.sqlite-shm
+
+# Activity history and debug dumps of real note content.
+*.log
+debug-note.json
+
+# Rendered launchd plists. The .template files are the source of truth; launchd
+# requires absolute paths, which is why plists are generated at install time
+# rather than committed.
+*.plist
+!*.plist.template
+
+# Machine-local Claude Code permissions.
+.claude/settings.local.json
+
+__pycache__/
+*.pyc
+node_modules/
+.DS_Store
+.fuse_hidden*

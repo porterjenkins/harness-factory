@@ -145,6 +145,11 @@ afternoon of merges later.
 cd <vault> && python3 .system/wiki/cli.py run --max-tag -1   # only after the user approves
 ```
 
+The build takes `--tag-all` to skip this and tag everything in one pass. It exists
+for disposable content — a test fixture, or a rebuild of a vault whose vocabulary
+is already settled. Do not reach for it on a first build against a customer's real
+notes because they seem impatient; that is the case this gate was written for.
+
 If the tags are wrong: revert (`git checkout -- .` if the vault is under git), edit the prompt in
 `.system/wiki/tagger.py`, and retry the sample. Do not proceed on a bad sample because the user
 seems impatient. If editing `tagger.py` does not fix it, **escalate**.

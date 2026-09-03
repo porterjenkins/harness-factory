@@ -263,7 +263,13 @@ fi
 _leaked=""
 for _f in "$VAULT"/*.md; do
   [ -f "$_f" ] || continue
-  grep -lE '/Users/[a-z]|/home/[a-z]' "$_f" >/dev/null 2>&1 && _leaked="$_leaked $(basename "$_f")"
+  # Match the ACTUAL host home and vault path, not any /Users/x. The loose regex
+  # this replaced flagged a CLAUDE.md whose own no-hardcoded-paths section used
+  # `/Users/wren/...` as an illustrative example of what not to bake in -- correct
+  # prose, failed by a check that could not tell an example from a leak. This is
+  # how sandbox-verify.sh has always done it.
+  { grep -qF "$HOME" "$_f" 2>/dev/null || grep -qF "$VAULT" "$_f" 2>/dev/null; } \
+    && _leaked="$_leaked $(basename "$_f")"
 done
 [ -z "$_leaked" ] && pass "no host filesystem paths in the root documents" \
                   || bad "root documents reference a host home directory:$_leaked"

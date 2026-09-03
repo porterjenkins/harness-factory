@@ -4,6 +4,7 @@
 #   ./build-vault.sh --template ./filled.md --out ~/notes/my-vault
 #   ./build-vault.sh --template ./filled.md --out /tmp/v --dry-run
 #   ./build-vault.sh --template ./filled.md --out /tmp/v --offline   # no model calls
+#   ./build-vault.sh --template ./filled.md --out /tmp/v --tag-all   # no review gate
 #
 # This automates Projects/Catalyst/SETUP.md phases 3-14. The template is the
 # artifact of the Phase 2 implementation interview; see TEMPLATE.md for its shape.
@@ -26,6 +27,7 @@ TODAY="$(date '+%Y-%m-%d')"
 JOBS="${JOBS:-4}"
 DRY_RUN=0; FORCE=0; VERIFY=1; KEEP_WORK=0
 INSTALL_AGENTS=0; ASSUME_YES=0; DO_ROUTINES=1; DO_TAGGING=1
+TAG_ALL=0; TAG_SAMPLE=10
 GRANOLA_READY=0
 
 usage() { sed -n '2,12p' "$0"; exit "${1:-0}"; }
@@ -43,6 +45,8 @@ while [ $# -gt 0 ]; do
     --no-cache)       LLM_USE_CACHE=0; shift ;;
     --install-agents) INSTALL_AGENTS=1; shift ;;
     --skip-tagging)   DO_TAGGING=0; shift ;;
+    --tag-all|--skip-tag-review) TAG_ALL=1; shift ;;
+    --tag-sample)     TAG_SAMPLE="$2"; shift 2 ;;
     --no-routines)    DO_ROUTINES=0; shift ;;
     --yes|-y)         ASSUME_YES=1; shift ;;
     --force)          FORCE=1; shift ;;
@@ -241,8 +245,18 @@ else
   step "status";  (cd "$VAULT" && $CLI status)
   step "run --dry-run"; (cd "$VAULT" && $CLI run --dry-run)
 
-  rule "9b/11  Tagging a sample of 10 -- REVIEW GATE"
-  (cd "$VAULT" && $CLI run --max-tag 10) || warn "the sample tagging pass reported an error"
+  if [ "$TAG_ALL" = "1" ]; then
+    rule "9b/11  Tagging EVERYTHING -- review gate skipped"
+    warn "--tag-all: tagging the whole vault in one pass, with no review."
+    info "  The tagger prefers existing high-count tags, so the first tags it writes"
+    info "  shape every tag that follows. Nobody is looking at them. If the early"
+    info "  tags are wrong they will propagate, and \`tag-lint\` has to clean up after."
+    info "  Recoverable if the vault is under git: git checkout -- . and re-run."
+    (cd "$VAULT" && $CLI run --max-tag -1) || warn "the tagging pass reported an error"
+  else
+    rule "9b/11  Tagging a sample of $TAG_SAMPLE -- REVIEW GATE"
+    (cd "$VAULT" && $CLI run --max-tag "$TAG_SAMPLE") || warn "the sample tagging pass reported an error"
+  fi
 
   _log="$VAULT/.system/log/log-$(date_fmt "$TODAY" '+%Y-%m').csv"
   _tagged="$(grep '|tag|' "$_log" 2>/dev/null | wc -l | tr -d ' ')"
@@ -253,13 +267,21 @@ else
   if [ "$_tagged" -gt 0 ] && [ "$_ondisk" -gt 0 ]; then
     ok "tagger works: $_tagged log row(s), $_ondisk note(s) carry tagged_hash on disk"
     echo
-    grep '|tag|' "$_log" | tail -10 | cut -d'|' -f3,4 | sed 's/^/     /'
+    grep '|tag|' "$_log" | tail -"$TAG_SAMPLE" | cut -d'|' -f3,4 | sed 's/^/     /'
     echo
-    warn "STOP AND REVIEW THE TAGS ABOVE before tagging the rest."
-    info "  The tagger prefers existing high-count tags, so these first tags shape"
-    info "  every tag that follows. Ten reviewed now is worth an afternoon of merges."
-    info "  Happy? Then:  cd $VAULT && python3 .system/wiki/cli.py run --max-tag -1"
-    info "  Not happy?    edit .system/wiki/tagger.py's prompt and retry the sample."
+    if [ "$TAG_ALL" = "1" ]; then
+      _pending="$( (cd "$VAULT" && $CLI status) 2>/dev/null | awk '/^  pending/ { print $2 }')"
+      warn "The whole vault was tagged with no review (--tag-all)."
+      info "  Read the tags above and run \`cli.py vocab\` to see the vocabulary that"
+      info "  now exists. If it drifted, \`tag-lint\` will propose merges."
+      [ "${_pending:-0}" != "0" ] && info "  $_pending file(s) still pending -- deferred by the per-run ceiling, not dropped."
+    else
+      warn "STOP AND REVIEW THE TAGS ABOVE before tagging the rest."
+      info "  The tagger prefers existing high-count tags, so these first tags shape"
+      info "  every tag that follows. $TAG_SAMPLE reviewed now is worth an afternoon of merges."
+      info "  Happy? Then:  cd $VAULT && python3 .system/wiki/cli.py run --max-tag -1"
+      info "  Not happy?    edit .system/wiki/tagger.py's prompt and retry the sample."
+    fi
   else
     warn "no tags were written ($_tagged log rows, $_ondisk notes with tagged_hash)"
     info "  The manifest exists, but tagging did not produce a result. Check that"
@@ -347,8 +369,12 @@ info "open it:   open -a Obsidian '$VAULT'   (then it is reachable as vault=$VAU
 echo
 info "Remaining, in order:"
 _n=1
-if [ "$DO_TAGGING" = "1" ]; then
+if [ "$DO_TAGGING" = "1" ] && [ "$TAG_ALL" = "0" ]; then
   info "  $_n. Review the sample tags above, then: cd '$VAULT' && python3 .system/wiki/cli.py run --max-tag -1"
+  _n=$(( _n + 1 ))
+elif [ "$DO_TAGGING" = "1" ]; then
+  info "  $_n. Tags were written without review. Check the vocabulary:"
+  info "     cd '$VAULT' && python3 .system/wiki/cli.py vocab"
   _n=$(( _n + 1 ))
 fi
 if [ -s "${CONFIRMED:-/dev/null}" ]; then

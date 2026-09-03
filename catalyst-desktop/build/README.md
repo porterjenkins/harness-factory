@@ -29,6 +29,8 @@ Both `--template` and `--out` are required. Start from `TEMPLATE.md`.
 | `--no-cache` | cache on | prompt→body is cached under `~/.cache/catalyst-sandbox` |
 | `--install-agents` | off | actually install the background jobs (macOS only; Windows always gets a script) |
 | `--skip-tagging` | off | build the vault, leave the manifest for later |
+| `--tag-all` | off | tag the whole vault in one pass, **skipping the review gate** (alias: `--skip-tag-review`) |
+| `--tag-sample` | 10 | how many notes the review-gate sample tags |
 | `--no-routines` | off | leave routine docs as bundled |
 | `--yes` / `-y` | off | confirm every routine without prompting |
 | `--force` | off | build into a non-empty directory (existing files backed up first) |
@@ -132,9 +134,17 @@ new, so the tagger re-tags the whole vault.
 `subprocess` cannot actually launch, so Phase 9 checks both that a `|tag|` row
 reached the log *and* that `tagged_hash` reached a note's frontmatter on disk.
 
-**The review gate is not optional.** The tagger prefers existing high-count tags,
-so the first ten tags shape every tag that follows. The build stops there and
-prints them. Nothing tags the rest of the vault for you.
+**The review gate is on by default, and skipping it is a real trade.** The tagger
+prefers existing high-count tags, so the first tags it writes shape every tag that
+follows: bad early tags propagate through the whole vault and `tag-lint` has to
+clean up after them. `SETUP.md` calls reviewing them the single most important
+step in the runbook.
+
+`--tag-all` skips it and tags everything in one pass. Reach for it when the
+content is disposable — a sandbox fixture, a rebuild of a vault whose vocabulary
+is already settled — not on a first build against real notes. It warns loudly, and
+the handoff points you at `cli.py vocab` instead of pretending a review happened.
+`--tag-sample N` changes the sample size without giving up the gate.
 
 **`for f in $(find ...)` splits on spaces.** Note titles contain spaces, so that
 turns `Acme Overview.md` into two nonexistent paths and every note reads as

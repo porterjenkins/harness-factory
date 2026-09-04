@@ -51,6 +51,25 @@ wire_payload() {
   # that arrived as an archive would not.
   find "$VAULT/.system" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
 
+  # The wiki pipeline's no-Obsidian write path needs ruamel.yaml. Bare python3 on
+  # a freshly built vault does not have it -- tagging used to report ten failures
+  # after doctor PASSed, because the preflight import ran in the payload project
+  # and the CLI ran under whatever `uv run` found from the vault (nothing). The
+  # vault carries its own uv project so the build, LaunchAgent, and
+  # `.system/wiki/cli.sh` share one environment.
+  cp "$PAYLOAD/pyproject.toml" "$VAULT/.system/pyproject.toml"
+  cp "$PAYLOAD/uv.lock" "$VAULT/.system/uv.lock"
+  [ -f "$PAYLOAD/.python-version" ] && cp "$PAYLOAD/.python-version" "$VAULT/.system/.python-version"
+  printf '.venv/\n' > "$VAULT/.system/.gitignore"
+  step "uv sync --project .system (ruamel.yaml into .system/.venv)"
+  uv sync --project "$VAULT/.system" --frozen
+  if uv run --project "$VAULT/.system" python -c 'import ruamel.yaml' >/dev/null 2>&1; then
+    ok "vault uv project ready (ruamel.yaml importable from .system/.venv)"
+  else
+    die "uv sync finished but ruamel.yaml is still not importable from the vault
+       project at $VAULT/.system. Check pyproject.toml and uv.lock there."
+  fi
+
   # Skills the template did not ask for are removed rather than left inert: a
   # SKILL.md on disk is discoverable, and a skill whose sources were never
   # configured will run and produce a confidently empty answer.
@@ -69,6 +88,7 @@ $_n
     esac
   done
   [ -n "$_dropped" ] && info "skills not requested, removed:$_dropped"
+  wire_skill_stubs
 
   # The sandbox scaffolder leaves a placeholder README in Skills/ and Routines/
   # saying they are "intentionally empty" and that the build installs the real
@@ -84,6 +104,74 @@ $_n
   ok "payload installed ($(find "$VAULT/Skills" -name SKILL.md | wc -l | tr -d ' ') skills, $(find "$VAULT/.system" -type f | wc -l | tr -d ' ') machinery files)"
 }
 
+# Template-named skills the payload does not ship. SOURCES.md lists every
+# requested skill and verify fails if that table names one with no SKILL.md, so
+# write a stub from the interview blurb rather than dropping the request or
+# listing a ghost.
+wire_skill_stubs() {
+  _stubdir="${WORK:-$VAULT/.system}"
+  mkdir -p "$_stubdir"
+  _stublog="$_stubdir/.stubbed-skills"
+  _stubnames="$_stubdir/.skill-names"
+  : > "$_stublog"
+  { tmpl_skill_names skills__system; tmpl_skill_names skills__user; } > "$_stubnames" || true
+  while IFS= read -r _sk || [ -n "$_sk" ]; do
+    [ -n "$_sk" ] || continue
+    if [ -f "$VAULT/Skills/$_sk/SKILL.md" ]; then continue; fi
+    _wire_write_skill_stub "$_sk"
+    printf '%s ' "$_sk" >> "$_stublog"
+  done < "$_stubnames"
+  if [ -s "$_stublog" ]; then
+    warn "no bundled skill for: $(cat "$_stublog")"
+    info "  installed stub SKILL.md from the template description; edit Skills/<name>/SKILL.md to deepen it"
+  fi
+  rm -f "$_stublog" "$_stubnames"
+}
+
+_wire_write_skill_stub() {
+  _sk="$1"
+  _blurb="$(tmpl_skill_blurb "$_sk")"
+  _title="$(printf '%s' "$_sk" | tr '-' ' ' | awk '{
+    for (i = 1; i <= NF; i++) $i = toupper(substr($i, 1, 1)) substr($i, 2)
+    print
+  }')"
+  _desc="$(printf '%s' "${_blurb:-$_sk}" | tr '\n' ' ' | sed 's/"/\\"/g')"
+  case "$_desc" in *.) ;; *) _desc="${_desc}." ;; esac
+  mkdir -p "$VAULT/Skills/$_sk"
+  {
+    printf '%s\n' "---"
+    printf 'name: %s\n' "$_sk"
+    printf 'description: "%s Use when the user asks for this by name or by the work it describes."\n' "$_desc"
+    printf '%s\n' "tags:"
+    printf '%s\n' "  - skill"
+    printf '%s\n' "  - knowledge-base"
+    printf '%s\n' "type: skill"
+    printf '%s\n' "---"
+    printf '\n# %s\n\n' "$_title"
+    if [ -n "$_blurb" ]; then printf '%s\n\n' "$_blurb"; else
+      printf '%s\n\n' "This skill was named in the implementation template with no further description."
+    fi
+    printf '%s\n' "This file was generated at vault build because the template requested \`${_sk}\`"
+    printf '%s\n' "and the payload has no bundled skill of that name. Treat the description above"
+    printf '%s\n' "as the spec; refine this file as the workflow settles rather than inventing a"
+    printf '%s\n' "different job."
+    printf '\n%s\n\n' "## 0. Sources"
+    printf '%s\n' "Read the \`## Who reads what\` table in \`SOURCES.md\` and take every row whose"
+    printf '%s\n' "\`skill\` is \`${_sk}\`. Resolve each role against the registry at the top of that"
+    printf '%s\n' "file. \`vault\` is always available via the \`doc-retrieval\` skill. A role set"
+    printf '%s\n' "to \`none\`, or naming a tool absent this session, is skipped and **named** in"
+    printf '%s\n' "the handoff — never silently omitted, never substituted."
+    printf '\n%s\n\n' "## 1. Do the work"
+    printf '%s\n' "Follow the spec in the description. Prefer vault notes over recollection;"
+    printf '%s\n' "link related documents with \`[[wiki links]]\`. Do not invent sources or"
+    printf '%s\n' "citations. If the input is a URL or PDF, read it in this run rather than"
+    printf '%s\n' "summarising from memory."
+    printf '\n%s\n\n' "## 2. Log"
+    printf '%s\n' "Append one line to \`.system/log/log-YYYY-MM.csv\` (pipe-delimited"
+    printf '%s\n' "\`timestamp|action|path|summary\`; see \`log-manager\`)."
+  } > "$VAULT/Skills/$_sk/SKILL.md"
+}
+
 # Run the bundle's own leftover-value gate when it is present. The payload is
 # clean today, so this is a tripwire for a future rebuild from a dirtier tree
 # rather than a step that currently does work.
@@ -93,11 +181,11 @@ wire_render_gate() {
     info "render.py not present in payload -- skipping the leftover-value gate"
     return 0
   fi
-  if python3 "$_r" --root "$VAULT" --check-only --vault-path "$VAULT" \
+  if uv run --project "$PAYLOAD" python "$_r" --root "$VAULT" --check-only --vault-path "$VAULT" \
        --vault-name "$VAULT_NAME" --label-prefix "$LABEL_PREFIX" >/dev/null 2>&1; then
     ok "no authoring-vault values remain in the installed payload"
   else
-    python3 "$_r" --root "$VAULT" --check-only --vault-path "$VAULT" \
+    uv run --project "$PAYLOAD" python "$_r" --root "$VAULT" --check-only --vault-path "$VAULT" \
       --vault-name "$VAULT_NAME" --label-prefix "$LABEL_PREFIX" || true
     die "payload still carries authoring-vault values (above). Those reach a plist
        or a skill and fail on this machine. Fix render.py's rules and re-run."
@@ -115,7 +203,8 @@ wire_settings() {
     "allow": [
       "Edit(**/*.md)",
       "Write(**/*.md)",
-      "Bash(python3 .system/wiki/cli.py:*)"
+      "Bash(.system/wiki/cli.sh:*)",
+      "Bash(uv run:*)"
     ],
     "deny": [
       "Edit($VAULT/Resources/Meetings/**)",
@@ -314,6 +403,7 @@ wire_sync_exclusions() {
 .system/wiki/manifest.sqlite-wal
 .system/wiki/manifest.sqlite-shm
 .system/log/
+.system/.venv/
 *.log
 __pycache__/
 *.pyc
@@ -604,9 +694,10 @@ wire_windows_agents() {
     printf 'New-Item -ItemType Directory -Force -Path $logs | Out-Null\n\n'
 
     printf '# --- Wiki ingestion, every 15 minutes ---------------------------------\n'
-    printf '$py = (Get-Command python).Source\n'
+    printf '# uv, not bare python: ruamel.yaml lives in the vault .system project.\n'
+    printf '$uv = (Get-Command uv).Source\n'
     printf '$action = New-ScheduledTaskAction -Execute "cmd.exe" -WorkingDirectory $vault `\n'
-    printf '  -Argument "/c `%s$py`%s `%s$vault\\.system\\wiki\\cli.py`%s run >> `%s$logs\\ingest.out.log`%s 2>> `%s$logs\\ingest.err.log`%s"\n' '"' '"' '"' '"' '"' '"' '"' '"'
+    printf '  -Argument "/c `%s$uv`%s run --project `%s$vault\\.system`%s --directory `%s$vault`%s python `%s$vault\\.system\\wiki\\cli.py`%s run >> `%s$logs\\ingest.out.log`%s 2>> `%s$logs\\ingest.err.log`%s"\n' '"' '"' '"' '"' '"' '"' '"' '"' '"' '"' '"' '"'
     printf '$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `\n'
     printf '  -RepetitionInterval (New-TimeSpan -Minutes 15) -RepetitionDuration ([TimeSpan]::MaxValue)\n'
     printf '$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `\n'
@@ -637,7 +728,7 @@ wire_windows_agents() {
     printf '#\n'
     printf '#   where.exe claude\n'
     printf '#   setx WIKI_CLAUDE_BIN "$env:APPDATA\\npm\\claude.cmd"\n'
-    printf '#   python .system\\wiki\\cli.py run --max-tag 1\n'
+    printf '#   uv run --project .system python .system\\wiki\\cli.py run --max-tag 1\n'
     printf '#   # then confirm a tagged_hash actually landed in a note on disk\n'
     printf '#\n'
     printf '# There is no WIKI_OBSIDIAN_BIN -- obsidian.py uses a socket, not a binary.\n\n'

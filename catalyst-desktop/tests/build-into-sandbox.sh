@@ -84,14 +84,14 @@ rule "5/5  Tagger against real content"
 if [ "$TAG" = "0" ]; then
   info "skipped (pass --tag N to tag a sample of N)"
 else
-  ( cd "$OUT" && python3 .system/wiki/cli.py rebuild ) >&2
-  ( cd "$OUT" && python3 .system/wiki/cli.py run --max-tag "$TAG" ) >&2 || true
+  "$OUT/.system/wiki/cli.sh" rebuild >&2
+  "$OUT/.system/wiki/cli.sh" run --max-tag "$TAG" >&2 || true
   _month="$(printf '%s' "$TODAY" | cut -c1-7)"
   _log="$OUT/.system/log/log-$_month.csv"
   _n="$({ grep -c '|tag|' "$_log" 2>/dev/null || true; } | tr -d ' ')"
   if [ "${_n:-0}" -gt 0 ]; then
     ok "$_n tag row(s) written -- the vocabulary the model chose:"
-    ( cd "$OUT" && python3 .system/wiki/cli.py vocab 2>/dev/null | head -12 | sed 's/^/    /' ) >&2
+    ( "$OUT/.system/wiki/cli.sh" vocab 2>/dev/null | head -12 | sed 's/^/    /' ) >&2
   else
     fail "no tags written; check that \`claude\` is logged in"; FAILED=1
   fi

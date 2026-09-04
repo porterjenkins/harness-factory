@@ -35,14 +35,17 @@ VAULT_NAME="$(basename "$VAULT")"
 PLIST_DIR="$HOME/Library/LaunchAgents"
 PLIST="$PLIST_DIR/$LABEL.plist"
 
-PYTHON="$(command -v python3 || true)"
-if [[ -z "$PYTHON" ]]; then
-  echo "error: python3 not found on PATH" >&2; exit 1
+UV="$(command -v uv || true)"
+if [[ -z "$UV" ]]; then
+  echo "error: uv not found on PATH (https://docs.astral.sh/uv/)" >&2
+  echo "       The wiki job runs via .system/wiki/cli.sh, which is uv run --project .system." >&2
+  exit 1
 fi
+echo "found uv at $UV"
 
 # Resolve the tools the job needs NOW, while we have a normal shell, and bake the
 # directories into the plist. launchd will not inherit this PATH.
-EXTRA_PATHS=""
+EXTRA_PATHS=":$(dirname "$UV")"
 for bin in obsidian claude; do
   resolved="$(command -v "$bin" || true)"
   if [[ -n "$resolved" ]]; then
@@ -65,7 +68,6 @@ mkdir -p "$VAULT/.system/log/run-logs" "$PLIST_DIR"
 
 RENDERED="$(sed \
   -e "s|__LABEL__|$LABEL|g" \
-  -e "s|__PYTHON__|$PYTHON|g" \
   -e "s|__VAULT__|$VAULT|g" \
   -e "s|__VAULT_NAME__|$VAULT_NAME|g" \
   -e "s|__HOME__|$HOME|g" \
@@ -94,6 +96,6 @@ echo "  interval: ${INTERVAL}s"
 echo "  logs:     $VAULT/.system/log/run-logs/"
 echo
 echo "Next:"
-echo "  python3 $VAULT/.system/wiki/cli.py doctor      # verify the environment"
+echo "  $VAULT/.system/wiki/cli.sh doctor              # verify the environment"
 echo "  launchctl kickstart -p gui/$(id -u)/$LABEL   # run once now"
 echo "  launchctl print gui/$(id -u)/$LABEL          # inspect state"

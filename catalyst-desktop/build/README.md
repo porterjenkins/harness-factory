@@ -154,8 +154,11 @@ reason guaranteed to be true.
 
 **`ruamel.yaml` is the trap.** The tagger writes frontmatter through it whenever
 Obsidian is not running — and a vault this script just created is never open in
-Obsidian. `cli.py doctor` reports its absence as INFO, not FAIL, so without the
-Phase 1 check the build passes every gate and then fails at write time.
+Obsidian. Checking `import ruamel.yaml` from the payload directory is not enough:
+`uv run` there uses *this* project's env, then tagging `cd`s into the vault where
+there is no such project. The build copies `pyproject.toml` into `$VAULT/.system`
+and `uv sync`s it; `.system/wiki/cli.sh` is `uv run --project .system`; `doctor`
+FAILs if that env still cannot import ruamel.yaml while Obsidian is down.
 
 **`rebuild` before the first `run`, always.** Skip it and every file looks brand
 new, so the tagger re-tags the whole vault.

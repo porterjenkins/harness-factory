@@ -49,8 +49,7 @@ report before committing to a build.
 
 ```bash
 uname -s                      # Darwin (macOS) or a Windows environment
-python3 -V                    # 3.9 or newer
-python3 -c 'import ruamel.yaml'   # REQUIRED — see below
+which uv                      # REQUIRED — wiki CLI is `uv run --project .system`
 node -v                       # 18 or newer (only for the Granola exporter)
 which claude                  # required for tagging
 which obsidian                # required for search/retrieval
@@ -60,8 +59,7 @@ ls -d /Applications/Obsidian.app 2>/dev/null
 | Requirement | If missing | Hard stop? |
 | --- | --- | --- |
 | Claude Code or Claude Cowork | escalate | **Yes** |
-| `python3` ≥ 3.9 | ask user to install | **Yes** |
-| `ruamel.yaml` | `pip3 install ruamel.yaml` | **Yes**, for tagging — see below |
+| `uv` | install from https://docs.astral.sh/uv/ | **Yes** |
 | `claude` on `PATH`, signed in | ask user to install and sign in | **Yes** — no tagging without it |
 | Obsidian desktop app | install from obsidian.md | **Yes** — the CLI is only a client |
 | `obsidian` CLI on `PATH` | see below | No — degraded mode |
@@ -69,9 +67,10 @@ ls -d /Applications/Obsidian.app 2>/dev/null
 
 **`ruamel.yaml` is the one that hides.** The tagger writes frontmatter through it whenever
 Obsidian is not running — and a vault the build just created is never open in Obsidian, so that
-is always the path taken on a fresh build. `cli.py doctor` reports its absence as INFO, not FAIL,
-so without an explicit check the build passes every gate and then fails at write time.
-`build-vault.sh` checks it in Phase 1 and refuses to continue.
+is always the path taken on a fresh build. `pip install` into system Python does not help:
+the CLI must run as `uv run --project <vault>/.system` (`.system/wiki/cli.sh`). The build
+copies `pyproject.toml` into the vault and syncs it; `doctor` FAILs if that env still cannot
+import ruamel.yaml while Obsidian is down.
 
 **The Obsidian CLI is not the app.** The binary (usually `/usr/local/bin/obsidian`) is a client
 that talks to the running GUI process and does nothing without it. Consequence that shapes the
@@ -142,7 +141,7 @@ whole vault, and `tag-lint` then has to clean up after them. Ten reviewed tags n
 afternoon of merges later.
 
 ```bash
-cd <vault> && python3 .system/wiki/cli.py run --max-tag -1   # only after the user approves
+cd <vault> && .system/wiki/cli.sh run --max-tag -1   # only after the user approves
 ```
 
 The build takes `--tag-all` to skip this and tag everything in one pass. It exists

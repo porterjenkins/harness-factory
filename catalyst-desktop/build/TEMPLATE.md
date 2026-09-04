@@ -7,14 +7,22 @@
 # Projects
 
 <!-- Active work with an outcome and an end. One folder per project.
-     `- Name | kind | one-line description`  (kind and description optional)
-     Nested bullets become subprojects: Projects/Enzy/Bedrock/
-     At least one is required — projects are the taxonomy every plan is built on. -->
+     Either shape is accepted:
+
+       - Name | kind | one-line description     (kind and description optional)
+         - Child | kind | description           nested bullets -> Projects/Name/Child/
+
+       ## Name                                  following prose is the description
+       ### Child                                ### headings -> Projects/Name/Child/
+
+     At least one is required — projects are the taxonomy every plan is built on.
+     Prose with neither bullets nor ## headings is not a project list. -->
 
 
 # Areas
 
-<!-- Ongoing responsibility, no finish line. `- Name | description` -->
+<!-- Ongoing responsibility, no finish line. `- Name | description`, or `## Name`
+     with following prose — same two shapes as # Projects. -->
 
 
 # Sources

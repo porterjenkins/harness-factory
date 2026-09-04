@@ -14,9 +14,20 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VAULT="$(cd "$HERE/../.." && pwd)"
 PROJECT="$VAULT/.system"
 
+# The standalone installer lands in ~/.local/bin and edits the shell profile.
+# That edit does not apply to this process, to launchd, or to a terminal that
+# was already open, so look there before giving up.
 if ! command -v uv >/dev/null 2>&1; then
-  echo "error: uv is required to run the wiki pipeline (https://docs.astral.sh/uv/)" >&2
-  echo "       The no-Obsidian write path needs ruamel.yaml from .system/pyproject.toml." >&2
+  if [ -d "$HOME/.local/bin" ]; then
+    PATH="$HOME/.local/bin:$PATH"
+    export PATH
+  fi
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "error: uv is not installed, so the wiki pipeline cannot run." >&2
+  echo "       The vault build installs it automatically. Re-run build/build-vault.sh," >&2
+  echo "       or contact your implementation engineer." >&2
   exit 1
 fi
 

@@ -35,10 +35,17 @@ VAULT_NAME="$(basename "$VAULT")"
 PLIST_DIR="$HOME/Library/LaunchAgents"
 PLIST="$PLIST_DIR/$LABEL.plist"
 
+# ~/.local/bin is where the vault build's standalone installer puts uv; a
+# terminal that has not been restarted will not have it on PATH yet.
+if ! command -v uv >/dev/null 2>&1 && [ -d "$HOME/.local/bin" ]; then
+  PATH="$HOME/.local/bin:$PATH"
+  export PATH
+fi
 UV="$(command -v uv || true)"
 if [[ -z "$UV" ]]; then
-  echo "error: uv not found on PATH (https://docs.astral.sh/uv/)" >&2
-  echo "       The wiki job runs via .system/wiki/cli.sh, which is uv run --project .system." >&2
+  echo "error: uv is not installed, so the wiki job cannot be registered." >&2
+  echo "       The vault build installs it automatically. Re-run build/build-vault.sh," >&2
+  echo "       or contact your implementation engineer." >&2
   exit 1
 fi
 echo "found uv at $UV"

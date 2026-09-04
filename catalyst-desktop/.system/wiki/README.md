@@ -82,10 +82,10 @@ and no shell-outs beyond `claude` and `obsidian`. What does not port is
 
 ```powershell
 cd <path-to-vault>
-python .system\wiki\cli.py doctor
-python .system\wiki\cli.py rebuild        # before the first run, always
-python .system\wiki\cli.py run --dry-run
-python .system\wiki\cli.py run
+uv run --project .system python .system\wiki\cli.py doctor
+uv run --project .system python .system\wiki\cli.py rebuild        # before the first run, always
+uv run --project .system python .system\wiki\cli.py run --dry-run
+uv run --project .system python .system\wiki\cli.py run
 ```
 
 `bootstrap.sh` is only a staged wrapper around these, so nothing is lost but the
@@ -133,14 +133,26 @@ ruamel.yaml and `writer.py` falls back; you lose retrieval and the
 Task Scheduler replaces launchd. The plist's constraints map over nearly
 one-to-one:
 
+Prefer the script the build writes (`.system\install-agents.ps1`) over typing
+this by hand. The lookup below matches it: `Get-Command uv` first, then the
+standalone-installer location, so a shell opened before the build installed uv
+still works.
+
 ```powershell
 $vault = "<path-to-vault>"
-$py    = (Get-Command python).Source
+$uv    = $null
+$cmd   = Get-Command uv -ErrorAction SilentlyContinue
+if ($cmd) { $uv = $cmd.Source }
+if (-not $uv) {
+  $fallback = Join-Path $env:USERPROFILE ".local\bin\uv.exe"
+  if (Test-Path $fallback) { $uv = $fallback }
+}
+if (-not $uv) { throw "uv is not installed. Re-run the vault build." }
 $logs  = "$vault\.system\log\run-logs"
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
 
 $action = New-ScheduledTaskAction -Execute "cmd.exe" -WorkingDirectory $vault `
-  -Argument "/c `"$py`" `"$vault\.system\wiki\cli.py`" run >> `"$logs\ingest.out.log`" 2>> `"$logs\ingest.err.log`""
+  -Argument "/c `"$uv`" run --project `"$vault\.system`" --directory `"$vault`" python `"$vault\.system\wiki\cli.py`" run >> `"$logs\ingest.out.log`" 2>> `"$logs\ingest.err.log`""
 
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
   -RepetitionInterval (New-TimeSpan -Minutes 15) -RepetitionDuration ([TimeSpan]::MaxValue)

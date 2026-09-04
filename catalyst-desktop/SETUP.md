@@ -48,8 +48,7 @@ Nothing counts as done until the handoff summary in Phase 5 is written.
 report before committing to a build.
 
 ```bash
-uname -s                      # Darwin (macOS) or a Windows environment
-which uv                      # REQUIRED — wiki CLI is `uv run --project .system`
+uname -s                      # Darwin (macOS), Linux, or a Windows environment
 node -v                       # 18 or newer (only for the Granola exporter)
 which claude                  # required for tagging
 which obsidian                # required for search/retrieval
@@ -59,11 +58,13 @@ ls -d /Applications/Obsidian.app 2>/dev/null
 | Requirement | If missing | Hard stop? |
 | --- | --- | --- |
 | Claude Code or Claude Cowork | escalate | **Yes** |
-| `uv` | install from https://docs.astral.sh/uv/ | **Yes** |
+| `uv` | `build-vault.sh` installs it in preflight | Only if that install fails — then escalate. Do **not** send the user to a package-manager page. |
 | `claude` on `PATH`, signed in | ask user to install and sign in | **Yes** — no tagging without it |
 | Obsidian desktop app | install from obsidian.md | **Yes** — the CLI is only a client |
 | `obsidian` CLI on `PATH` | see below | No — degraded mode |
 | `node` ≥ 18 | only blocks the Granola exporter | No |
+
+**`uv` is the build's job.** The wiki CLI is `uv run --project .system`. If `uv` is missing, Phase 1 of `build-vault.sh` installs it with the official standalone installer (macOS/Linux: `install.sh`; Windows: the PowerShell installer, so Task Scheduler sees the same binary). An already-installed copy (Homebrew, WinGet, a prior build) is left alone. Do not ask the user to install a package manager.
 
 **`ruamel.yaml` is the one that hides.** The tagger writes frontmatter through it whenever
 Obsidian is not running — and a vault the build just created is never open in Obsidian, so that
@@ -203,6 +204,7 @@ Stop the affected phase and tell the user to contact their implementation engine
 - Obsidian cannot be installed — the vault still works as markdown, but there is no retrieval.
 - The tagging sample is wrong and editing `tagger.py` does not fix it.
 - `cli.py doctor` reports a failure you cannot explain from this file.
+- `uv` cannot be installed (the build's preflight installer failed). Do not ask the user to install a package manager.
 
 Escalating is not a failure. Silently substituting a different tool, or a degraded search path,
 is.

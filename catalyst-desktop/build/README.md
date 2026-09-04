@@ -14,6 +14,13 @@ agent otherwise walks a customer through by hand.
 
 Both `--template` and `--out` are required. Start from `TEMPLATE.md`.
 
+`uv` is required (the wiki CLI is `uv run --project .system`). Preflight installs
+it with the official standalone installer if it is not already on PATH, so a vault
+owner never has to visit a package-manager page. macOS and Linux use
+`https://astral.sh/uv/install.sh`; Windows uses the PowerShell installer so Task
+Scheduler can see the same binary. Already-installed copies (Homebrew, WinGet, a
+prior build) are left alone.
+
 ## Flags
 
 | Flag | Default | Notes |

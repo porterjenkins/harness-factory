@@ -21,6 +21,7 @@ LIB_DIR="$PAYLOAD/lib"
 . "$HERE/lib/template.sh"
 . "$HERE/lib/hydrate.sh"
 . "$HERE/lib/wire.sh"
+. "$HERE/lib/uv.sh"
 
 TEMPLATE=""; OUT=""; VAULT_NAME=""; LABEL_PREFIX="com.knowledgebase"
 TODAY="$(date '+%Y-%m-%d')"
@@ -66,9 +67,15 @@ rule "1/11  Preflight"
 [ -n "$OUT" ]      || die "--out is required"
 [ -f "$TEMPLATE" ] || die "template not found: $TEMPLATE"
 
-need_cmd uv; need_cmd rsync; need_cmd awk; need_cmd sed; need_cmd find
-[ "$LLM_OFFLINE" = "1" ] || need_cmd claude
+need_cmd rsync; need_cmd awk; need_cmd sed; need_cmd find
 date_fmt "$TODAY" '+%Y-%m-%d' >/dev/null 2>&1 || die "--today must be YYYY-MM-DD, got: $TODAY"
+
+# uv is required (wiki CLI is `uv run --project .system`). Do not send the user
+# to a package-manager page: ensure_uv installs it with the official standalone
+# installer if this machine does not already have it. Runs before the claude
+# check so a retry after signing in does not have to wait on uv again.
+ensure_uv
+[ "$LLM_OFFLINE" = "1" ] || need_cmd claude
 
 # ruamel.yaml is required for the no-Obsidian write path, and a vault this script
 # just created is never open in Obsidian. Do NOT prove the import from this
@@ -76,7 +83,6 @@ date_fmt "$TODAY" '+%Y-%m-%d' >/dev/null 2>&1 || die "--today must be YYYY-MM-DD
 # the vault where there is no such project and the import fails at write time.
 # wire_payload copies pyproject.toml into $VAULT/.system and syncs it; doctor
 # FAILs if that env still cannot import ruamel.yaml while Obsidian is down.
-ok "uv present (wiki CLI runs as uv run --project <vault>/.system)"
 
 # ------------------------------------------------------------- 2/11  template
 

@@ -85,8 +85,9 @@ def write_via_ruamel(vault: Path, updates: Dict[str, dict]) -> List[str]:
         from ruamel.yaml import YAML  # type: ignore
     except ImportError as exc:  # pragma: no cover - environment dependent
         raise WriteError(
-            "ruamel.yaml is required for the no-Obsidian write path: "
-            "pip install ruamel.yaml"
+            "ruamel.yaml is required for the no-Obsidian write path. "
+            "Run via .system/wiki/cli.sh (uv run --project .system), "
+            "not bare python3."
         ) from exc
 
     import io

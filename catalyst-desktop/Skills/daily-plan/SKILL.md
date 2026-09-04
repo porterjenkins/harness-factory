@@ -359,7 +359,7 @@ If the section is empty or missing, that's lane 1 done — say so in the handoff
 **Lane 2 — searches derived from the vault's own vocabulary.** Build 3–6 queries from what the
 user actually works on:
 
-1. **Frequent tags** — `python3 .system/wiki/cli.py vocab` prints the tag vocabulary with counts,
+1. **Frequent tags** — `.system/wiki/cli.sh vocab` prints the tag vocabulary with counts,
    most-used first.
 2. **Projects** — `CLAUDE.md`'s `# Projects` section and its named subprojects.
 3. **Areas** — the folders under `Areas/`.

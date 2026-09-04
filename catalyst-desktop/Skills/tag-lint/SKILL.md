@@ -39,9 +39,9 @@ which is the failure mode the coverage guard below exists to catch.
 ## 1. Get the report
 
 ```bash
-python3 .system/wiki/cli.py tag-lint
-python3 .system/wiki/cli.py tag-lint --json      # includes a ready-to-execute merge plan
-python3 .system/wiki/cli.py tag-lint --frequency # ignore tags.md and lint on counts alone
+.system/wiki/cli.sh tag-lint
+.system/wiki/cli.sh tag-lint --json      # includes a ready-to-execute merge plan
+.system/wiki/cli.sh tag-lint --frequency # ignore tags.md and lint on counts alone
 ```
 
 Counts come from `obsidian tags counts format=json` when the app is available,

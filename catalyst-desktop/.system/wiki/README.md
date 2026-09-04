@@ -7,18 +7,22 @@ is invoked for tagging and nothing else.
 ## Commands
 
 ```bash
-python3 .system/wiki/cli.py doctor           # verify the environment first
-python3 .system/wiki/cli.py init             # create .system/wiki/manifest.sqlite
-python3 .system/wiki/cli.py rebuild          # seed manifest from frontmatter (no LLM)
-python3 .system/wiki/cli.py run --dry-run    # classify, change nothing
-python3 .system/wiki/cli.py run              # one real pass (what launchd runs)
-python3 .system/wiki/cli.py run --max-tag -1 # no tagging ceiling; use deliberately
-python3 .system/wiki/cli.py status           # manifest counts and timestamps
-python3 .system/wiki/cli.py vocab            # tag vocabulary with counts
-python3 .system/wiki/cli.py tag-lint         # drift report
-python3 .system/wiki/cli.py prune            # hard-delete expired tombstones
-python3 .system/wiki/cli.py retry-failed     # requeue files that gave up after N failures
+.system/wiki/cli.sh doctor           # verify the environment first
+.system/wiki/cli.sh init             # create .system/wiki/manifest.sqlite
+.system/wiki/cli.sh rebuild          # seed manifest from frontmatter (no LLM)
+.system/wiki/cli.sh run --dry-run    # classify, change nothing
+.system/wiki/cli.sh run              # one real pass (what launchd runs)
+.system/wiki/cli.sh run --max-tag -1 # no tagging ceiling; use deliberately
+.system/wiki/cli.sh status           # manifest counts and timestamps
+.system/wiki/cli.sh vocab            # tag vocabulary with counts
+.system/wiki/cli.sh tag-lint         # drift report
+.system/wiki/cli.sh prune            # hard-delete expired tombstones
+.system/wiki/cli.sh retry-failed     # requeue files that gave up after N failures
 ```
+
+`cli.sh` is `uv run --project .system python .system/wiki/cli.py`. Bare `python3`
+does not see ruamel.yaml, which is required whenever Obsidian is not the write
+path.
 
 ## First run
 
@@ -37,11 +41,11 @@ propagate and `tag-lint` then has to clean up after them.
 Doing it by hand instead:
 
 ```bash
-python3 .system/wiki/cli.py doctor
-python3 .system/wiki/cli.py rebuild        # marks already-tagged files as tagged
-python3 .system/wiki/cli.py run --dry-run  # confirm the classification looks sane
-python3 .system/wiki/cli.py run            # tag up to MAX_TAG_PER_RUN files
-python3 .system/wiki/cli.py run --max-tag -1   # or tag everything at once
+.system/wiki/cli.sh doctor
+.system/wiki/cli.sh rebuild        # marks already-tagged files as tagged
+.system/wiki/cli.sh run --dry-run  # confirm the classification looks sane
+.system/wiki/cli.sh run            # tag up to MAX_TAG_PER_RUN files
+.system/wiki/cli.sh run --max-tag -1   # or tag everything at once
 ./.system/wiki/launchagent/install.sh
 ```
 
@@ -78,10 +82,10 @@ and no shell-outs beyond `claude` and `obsidian`. What does not port is
 
 ```powershell
 cd <path-to-vault>
-python .system\wiki\cli.py doctor
-python .system\wiki\cli.py rebuild        # before the first run, always
-python .system\wiki\cli.py run --dry-run
-python .system\wiki\cli.py run
+uv run --project .system python .system\wiki\cli.py doctor
+uv run --project .system python .system\wiki\cli.py rebuild        # before the first run, always
+uv run --project .system python .system\wiki\cli.py run --dry-run
+uv run --project .system python .system\wiki\cli.py run
 ```
 
 `bootstrap.sh` is only a staged wrapper around these, so nothing is lost but the
@@ -116,26 +120,39 @@ shell before testing it.
 
 **`doctor` does not catch this.** It probes with `shutil.which`, which *does*
 apply `PATHEXT`, so it reports PASS on a bare `claude` that `subprocess` cannot
-launch. Prove the real path with `python .system\wiki\cli.py run --max-tag 1` and
+launch. Prove the real path with `uv run --project .system python .system\wiki\cli.py run --max-tag 1` and
 check that a tag actually landed on disk.
 
 If the Obsidian CLI is unavailable here, nothing is broken -- that is the
-documented no-app mode. `pip install ruamel.yaml` and `writer.py` falls back;
-you lose retrieval and the `processFrontMatter` write path, not ingestion.
+documented no-app mode. `.system/wiki/cli.sh` (uv run --project .system) provides
+ruamel.yaml and `writer.py` falls back; you lose retrieval and the
+`processFrontMatter` write path, not ingestion.
 
 ### The scheduled job
 
 Task Scheduler replaces launchd. The plist's constraints map over nearly
 one-to-one:
 
+Prefer the script the build writes (`.system\install-agents.ps1`) over typing
+this by hand. The lookup below matches it: `Get-Command uv` first, then the
+standalone-installer location, so a shell opened before the build installed uv
+still works.
+
 ```powershell
 $vault = "<path-to-vault>"
-$py    = (Get-Command python).Source
+$uv    = $null
+$cmd   = Get-Command uv -ErrorAction SilentlyContinue
+if ($cmd) { $uv = $cmd.Source }
+if (-not $uv) {
+  $fallback = Join-Path $env:USERPROFILE ".local\bin\uv.exe"
+  if (Test-Path $fallback) { $uv = $fallback }
+}
+if (-not $uv) { throw "uv is not installed. Re-run the vault build." }
 $logs  = "$vault\.system\log\run-logs"
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
 
 $action = New-ScheduledTaskAction -Execute "cmd.exe" -WorkingDirectory $vault `
-  -Argument "/c `"$py`" `"$vault\.system\wiki\cli.py`" run >> `"$logs\ingest.out.log`" 2>> `"$logs\ingest.err.log`""
+  -Argument "/c `"$uv`" run --project `"$vault\.system`" --directory `"$vault`" python `"$vault\.system\wiki\cli.py`" run >> `"$logs\ingest.out.log`" 2>> `"$logs\ingest.err.log`""
 
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
   -RepetitionInterval (New-TimeSpan -Minutes 15) -RepetitionDuration ([TimeSpan]::MaxValue)
@@ -264,7 +281,7 @@ DELETE and proves the mode works before returning.
 ## Tests
 
 ```bash
-python3 -m unittest discover -s .system/wiki/tests -t .
+uv run python -m unittest discover -s .system/wiki/tests -t .system
 ```
 
 Covers every branch that can silently lose data: the pre-filter (both guards, and
@@ -281,9 +298,8 @@ Ingestion is portable; only retrieval needs the app. To run this on a box withou
 Obsidian:
 
 ```bash
-pip install ruamel.yaml     # required: the no-app frontmatter write path
 export WIKI_VAULT_PATH=/path/to/vault
-python3 .system/wiki/cli.py run
+.system/wiki/cli.sh run     # uv run --project .system; pulls in ruamel.yaml
 ```
 
 `writer.py` falls back automatically. Vocabulary falls back to a frontmatter scan

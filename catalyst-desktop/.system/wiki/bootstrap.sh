@@ -22,7 +22,7 @@ done
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VAULT="$(cd "$HERE/../.." && pwd)"
-CLI="python3 $HERE/cli.py"
+CLI="$HERE/cli.sh"
 cd "$VAULT"
 
 confirm() {
@@ -94,5 +94,5 @@ fi
 rule "Done"
 echo "Ongoing:"
 echo "  ./.system/wiki/launchagent/status.sh     # is the job healthy"
-echo "  python3 .system/wiki/cli.py status       # manifest state"
-echo "  python3 .system/wiki/cli.py tag-lint     # tag drift, run monthly"
+echo "  .system/wiki/cli.sh status               # manifest state"
+echo "  .system/wiki/cli.sh tag-lint             # tag drift, run monthly"

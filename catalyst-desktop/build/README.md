@@ -14,6 +14,13 @@ agent otherwise walks a customer through by hand.
 
 Both `--template` and `--out` are required. Start from `TEMPLATE.md`.
 
+`uv` is required (the wiki CLI is `uv run --project .system`). Preflight installs
+it with the official standalone installer if it is not already on PATH, so a vault
+owner never has to visit a package-manager page. macOS and Linux use
+`https://astral.sh/uv/install.sh`; Windows uses the PowerShell installer so Task
+Scheduler can see the same binary. Already-installed copies (Homebrew, WinGet, a
+prior build) are left alone.
+
 ## Flags
 
 | Flag | Default | Notes |
@@ -154,8 +161,11 @@ reason guaranteed to be true.
 
 **`ruamel.yaml` is the trap.** The tagger writes frontmatter through it whenever
 Obsidian is not running — and a vault this script just created is never open in
-Obsidian. `cli.py doctor` reports its absence as INFO, not FAIL, so without the
-Phase 1 check the build passes every gate and then fails at write time.
+Obsidian. Checking `import ruamel.yaml` from the payload directory is not enough:
+`uv run` there uses *this* project's env, then tagging `cd`s into the vault where
+there is no such project. The build copies `pyproject.toml` into `$VAULT/.system`
+and `uv sync`s it; `.system/wiki/cli.sh` is `uv run --project .system`; `doctor`
+FAILs if that env still cannot import ruamel.yaml while Obsidian is down.
 
 **`rebuild` before the first `run`, always.** Skip it and every file looks brand
 new, so the tagger re-tags the whole vault.

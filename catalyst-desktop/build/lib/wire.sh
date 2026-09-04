@@ -234,20 +234,72 @@ wire_seed_notes() {
   done
   _n="$(find "$VAULT/Projects" "$VAULT/Areas" -name '*.md' | wc -l | tr -d ' ')"
   ok "seeded $_n starter note(s) for the first tagging pass"
+
+  # A vault with nothing but these stubs is the case SETUP.md warns about:
+  # "tagging an empty vault teaches the tagger nothing". The tagger is not idle
+  # here -- it will happily tag the bundled Skills and Routines -- which is worse
+  # than idle, because those establish a machinery vocabulary (knowledge-base,
+  # skill, workflow, automation) as the high-count tags the tagger then prefers,
+  # before a single real note exists to argue otherwise.
+  _content="$(find "$VAULT/Projects" "$VAULT/Areas" "$VAULT/Resources" -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "$_content" -le "$_n" ]; then
+    warn "this vault has no content beyond the $_n stub note(s) just created."
+    info "  The tagger will still run, but the vocabulary it establishes will come"
+    info "  mostly from the bundled Skills and Routines rather than real notes."
+    info "  Prefer: --skip-tagging now, import the content, then"
+    info "          cli.py rebuild && cli.py run --max-tag 10"
+  fi
 }
 
+# Tags the shipped Skills/ and Routines/ carry in their own frontmatter. On a
+# fresh vault these are the ONLY tags that reach taglint's `established` count of
+# 5, so a hand-written tags.md listing only the owner's domain vocabulary scores
+# 0% coverage, falls under the 60% floor, and canon mode is refused with "the list
+# looks stale, not the vault" -- backwards, but correct from where taglint sits.
+# Seeding them makes a declared vocabulary actually take effect on day one.
+WIRE_MACHINERY_TAGS="knowledge-base skill workflow automation planning reference architecture concept"
+
 wire_tags_md() {
-  _mode="$(tmpl_kv tag-vocabulary Mode)"
-  [ "$_mode" = "canon" ] || { info "tag vocabulary: frequency mode (the default)"; return 0; }
+  # Case-folded, because this is a hand-filled field and `Canon` is what a person
+  # writes. Matching only the lowercase spelling meant a declared vocabulary was
+  # dropped while the build reported "frequency mode (the default)" -- the one
+  # wording that makes an ignored instruction look like an intentional choice.
+  _mode="$(tmpl_kv tag-vocabulary Mode | tr '[:upper:]' '[:lower:]' \
+           | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  case "$_mode" in
+    canon) ;;
+    ""|frequency|freq|none|off|auto|default)
+      info "tag vocabulary: frequency mode (the default)"; return 0 ;;
+    *)
+      # An unrecognised value is a typo, not a preference. Falling through to the
+      # default silently would discard whatever they meant.
+      warn "# Tag Vocabulary names an unknown mode: '$_mode'"
+      info "  Expected \`canon\` or \`frequency\`. Using frequency mode."
+      return 0 ;;
+  esac
   _tags="$(tmpl_records tag-vocabulary | cut -d'|' -f1 | grep -vE '^(Mode|Tags):' || true)"
   if [ -z "$_tags" ]; then
     warn "tag vocabulary set to canon but no tags listed -- staying in frequency mode"
     return 0
   fi
-  printf '%s\n' "$_tags" | sed 's/^/- /' > "$VAULT/.system/tags.md"
+  {
+    printf '# Declared tag vocabulary\n\n'
+    printf 'Canon mode: the spelling here wins over whatever the vault has drifted\n'
+    printf 'to, regardless of count. `tag-lint` reads this; the tagger does NOT --\n'
+    printf 'it still prefers established tags by frequency. Lives at\n'
+    printf '`.system/tags.md` (or `tags.md` at the vault root).\n\n'
+    printf '## From the implementation template\n\n'
+    printf '%s\n' "$_tags" | sed 's/^/- /'
+    printf '\n## Carried by the bundled Skills and Routines\n\n'
+    printf 'Not preferences -- these are already in the vault, on the skill and\n'
+    printf 'routine docs the build installed. Omitting them puts canon coverage\n'
+    printf 'under the 60%% floor on a fresh vault and tag-lint falls back to\n'
+    printf 'frequency mode. Prune them once real content outweighs the machinery.\n\n'
+    for _mt in $WIRE_MACHINERY_TAGS; do printf -- '- %s\n' "$_mt"; done
+  } > "$VAULT/.system/tags.md"
   warn "canon mode is only safe while this list is maintained; a stale tags.md
         makes tag-lint recommend merges toward tags nobody uses"
-  ok ".system/tags.md written (canon mode)"
+  ok ".system/tags.md written ($(printf '%s\n' "$_tags" | grep -c . | tr -d ' ') declared + $(printf '%s' "$WIRE_MACHINERY_TAGS" | wc -w | tr -d ' ') machinery tags)"
 }
 
 # ------------------------------------------------------------------ exclusions

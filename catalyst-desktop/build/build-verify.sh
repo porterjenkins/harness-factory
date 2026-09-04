@@ -48,7 +48,7 @@ for _f in CLAUDE.md USER.md SOURCES.md PRIORITIES.md MEMORY.md; do
   if [ ! -s "$VAULT/$_f" ]; then
     bad "$_f missing or empty"
   elif [ "$(wc -c < "$VAULT/$_f" | tr -d ' ')" -lt 300 ]; then
-    bad "$_f is suspiciously short ($(wc -c < "$VAULT/$_f" | tr -d ' ') bytes) -- generation probably truncated"
+    bad "$_f is only $(wc -c < "$VAULT/$_f" | tr -d ' ') bytes -- either generation was truncated, or the template section it derives from is too thin to produce a useful document"
   else
     pass "$_f ($(wc -w < "$VAULT/$_f" | tr -d ' ') words)"
   fi

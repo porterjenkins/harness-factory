@@ -54,6 +54,36 @@ an essay — two tables and a list wrapped in rules identical across every vault
 Generating prose around them bought nothing and cost a real hazard: a level-1
 splice of `# Connected sources` swallows its own `## Who reads what` child.
 
+## Tag vocabulary
+
+Optional, and off unless asked for. `# Tag Vocabulary` in the template accepts:
+
+| `- Mode:` | Behaviour |
+|---|---|
+| absent, blank, `frequency`, `none`, `off` | frequency mode — no `tags.md` is written at all |
+| `canon` with tags listed | writes `.system/tags.md`; the declared spelling wins over count |
+| `canon` with no tags | warns, falls back to frequency |
+| anything else | warns that the mode is unknown, falls back to frequency |
+
+Matching is case-folded and whitespace-trimmed, because this is a hand-filled
+field and `Canon` is what a person writes. An earlier version matched only the
+lowercase spelling, so a declared vocabulary was dropped while the build reported
+"frequency mode (the default)" — the one wording that makes an ignored instruction
+look like a deliberate choice.
+
+Two things about canon mode that are not obvious:
+
+- **It steers `tag-lint`, not the tagger.** `tagger.py` has no reference to canon;
+  tag *choice* stays frequency-led. The declared list governs which spelling wins
+  when linting drift.
+- **On a fresh vault it would otherwise be refused.** The only tags above
+  taglint's count-5 `established` threshold are the ones the bundled Skills and
+  Routines carry, so a list of domain tags scores 0% coverage, falls under the 60%
+  floor, and taglint reports *"the list looks stale, not the vault"* — backwards,
+  but correct from where it sits. The build therefore seeds those machinery tags
+  into `tags.md` in a separate labelled section, so a declared vocabulary takes
+  effect on day one.
+
 ## Platform
 
 `# Platform` in the template picks how the two background jobs — wiki ingestion

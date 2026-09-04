@@ -91,12 +91,34 @@
      prefer to work, and what they find useless. -->
 
 - Name:
-- Pronouns:
 - Email:
 - Location:
 - Timezone:
+- Expertise:
+- Education
+- Public Resources:
+- Affiliation(s):
 - Shorthand:
     - ABBR = what it stands for
+
+
+
+# Tag Vocabulary
+
+<!-- Optional. `frequency` (the default and the recommendation) lets `tag-lint`
+     judge drift by the vault's own observed tag counts — nothing to configure.
+
+     `canon` writes the list below to `.system/tags.md`, and the declared spelling
+     then wins regardless of count. Two things to know before choosing it:
+       - It steers `tag-lint`, NOT the tagger. Tag *choice* is still frequency-led.
+       - It is only safe while somebody maintains the list. A stale tags.md makes
+         tag-lint recommend merges toward tags nobody uses.
+     The build adds the tags the bundled Skills and Routines already carry, or
+     canon coverage falls under tag-lint's 60% floor on a fresh vault and the
+     declared list is ignored entirely. -->
+
+- Mode: frequency
+- Tags:
 
 
 # Operating System (windows vs macos)

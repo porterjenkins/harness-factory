@@ -12,12 +12,23 @@
  *   GRANOLA_OUT_DIR   base output dir (default: <vault>/Resources/Meetings, resolved from this
  *                     file's own location — no hardcoded path)
  *   GRANOLA_TRANSCRIPT  "1" to include transcripts (default off; slower, larger)
+ *   GRANOLA_REDACTION   "true"/"1"/"yes" to screen every note for sensitive
+ *                     material before writing it. Off by default. The CLI flags
+ *                     --redacted / --no-redacted override it for a single run.
+ *
+ * Screening needs the `claude` CLI on PATH, and it fails closed: a note whose
+ * semantic pass errors is not written at all, and whatever was already on disk
+ * is left alone. A half-screened note in the vault is worse than one that was
+ * obviously never processed.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+
+import { readFrontmatterScalar, redactNote } from "./redact/index.mjs";
 
 const API_BASE = "https://public-api.granola.ai/v1";
 const API_KEY = process.env.GRANOLA_API_KEY;
@@ -35,6 +46,25 @@ const VAULT = path.resolve(HERE, "..", "..", "..");
 const OUT_DIR = process.env.GRANOLA_OUT_DIR || path.join(VAULT, "Resources", "Meetings");
 const INCLUDE_TRANSCRIPT = process.env.GRANOLA_TRANSCRIPT === "1";
 const STATE_DIR = HERE;
+const CLAUDE_BIN = process.env.GRANOLA_CLAUDE_BIN || "claude";
+
+// The only argv this exporter accepts. Everything else is an env var, because
+// that is what the launchd plist and the Windows scheduled task can set; the
+// flags exist so a one-off run can go the other way without editing either.
+// Precedence: flag > GRANOLA_REDACTION > off.
+let redactFlag = null;
+for (const arg of process.argv.slice(2)) {
+  if (arg === "--redacted") redactFlag = true;
+  else if (arg === "--no-redacted") redactFlag = false;
+  else {
+    console.error(`ERROR: unknown argument: ${arg}\nUsage: export.mjs [--redacted | --no-redacted]`);
+    process.exit(2);
+  }
+}
+const REDACT =
+  redactFlag !== null
+    ? redactFlag
+    : /^(1|true|yes)$/i.test((process.env.GRANOLA_REDACTION || "").trim());
 
 // Stay under the API limit (5 req/s sustained). ~250ms between calls is safe.
 const REQ_DELAY_MS = 260;
@@ -185,13 +215,31 @@ async function listAllNotes() {
   return notes;
 }
 
+// Check once, up front. Discovering that `claude` is missing on note 1 of 400
+// burns the whole unattended run one failed note at a time, and under launchd
+// nobody reads the log until they go looking for a meeting that never arrived.
+function requireClaude() {
+  const probe = spawnSync(CLAUDE_BIN, ["--version"], { stdio: "ignore" });
+  if (probe.error) {
+    console.error(
+      `ERROR: redaction is on but the \`${CLAUDE_BIN}\` CLI is not on PATH.\n` +
+        "Install it and sign in, or run without --redacted / with GRANOLA_REDACTION unset."
+    );
+    process.exit(1);
+  }
+}
+
 async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.mkdirSync(STATE_DIR, { recursive: true });
+  if (REDACT) requireClaude();
 
   const stamp = () =>
     new Date().toLocaleString("sv-SE", { timeZoneName: "short" }); // YYYY-MM-DD HH:MM:SS TZ
-  console.log(`\n[${stamp()}] Fetching note list from Granola...`);
+  console.log(
+    `\n[${stamp()}] Fetching note list from Granola...` +
+      (REDACT ? " (redaction on)" : "")
+  );
   const list = await listAllNotes();
   console.log(`Found ${list.length} note(s).`);
 
@@ -247,15 +295,45 @@ async function main() {
         outPath = path.join(destDir, base);
       }
 
+      if (!REDACT) {
+        if (fs.existsSync(outPath)) {
+          const existing = fs.readFileSync(outPath, "utf8");
+          if (contentHash(existing) === contentHash(md)) {
+            skipped++;
+            continue;
+          }
+        }
+        fs.writeFileSync(outPath, md, "utf8");
+        written++;
+        continue;
+      }
+
+      // Change detection compares the hash of the UNREDACTED render against the
+      // `source_hash` stamped into the file last time, never the rendered file
+      // against itself. Semantic output is not deterministic, so hashing the
+      // redacted result would mark every note changed on every 30-minute run and
+      // re-screen the entire vault forever. This is what makes "one model call
+      // per changed note" literally true.
+      const srcHash = contentHash(md);
       if (fs.existsSync(outPath)) {
         const existing = fs.readFileSync(outPath, "utf8");
-        if (contentHash(existing) === contentHash(md)) {
+        if (readFrontmatterScalar(existing, "source_hash") === srcHash) {
           skipped++;
           continue;
         }
       }
-      fs.writeFileSync(outPath, md, "utf8");
+
+      // Markers name a category and nothing else; the pointer back to the
+      // unredacted original is the note's own granola_url / granola_id, already
+      // in the frontmatter above.
+      const screened = await redactNote(md, { sourceHash: srcHash });
+      fs.writeFileSync(outPath, screened.text, "utf8");
       written++;
+      if (screened.redactions) {
+        console.log(
+          `  screened ${base}: ${screened.redactions} redaction(s) [${screened.categories.join(", ")}]`
+        );
+      }
     } catch (e) {
       failed++;
       console.warn(`Skipped ${stub.id}: ${e.message.split("\n")[0]}`);

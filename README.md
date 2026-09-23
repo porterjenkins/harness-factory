@@ -65,7 +65,8 @@ catalyst-desktop/
   Routines/             4 scheduled automations
   .system/
     wiki/                 ingestion + auto-tagging pipeline (9 CLI commands, 81 tests)
-    connectors/           inbound feeds — currently Granola meeting notes
+    connectors/           inbound feeds — currently Granola meeting notes,
+                          with two-layer redaction of sensitive material
     .env.example          the single config file for every connector
   tests/                sandbox vaults: disposable fixtures generated with `claude -p`
 ```
@@ -84,6 +85,7 @@ Every README in that tree is worth reading before changing the thing it describe
 | `claude` CLI, signed in | required for tagging and for generating the root documents |
 | Obsidian desktop + CLI | required for search and retrieval, not for ingestion |
 | `node` ≥ 18 | only for the Granola connector |
+| `claude` on PATH | also required by the Granola connector when `GRANOLA_REDACTION=true` |
 
 **`ruamel.yaml` is the one that hides.** The tagger writes frontmatter through it
 whenever Obsidian is not running — which is always true of a vault the build just
@@ -123,6 +125,7 @@ Nothing tags the rest of your vault for you.
 
 ```bash
 cd catalyst-desktop/.system && python3 -m unittest discover -s wiki/tests -t .   # 81 tests
+cd catalyst-desktop/.system/connectors/granola-export && node --test tests/      # 58 tests
 cd catalyst-desktop && ./build/build-vault.sh --template … --out /tmp/v --offline
 cd catalyst-desktop && ./tests/sandbox-up.sh --offline --dry-run
 ```
@@ -152,6 +155,16 @@ Two things, both on purpose:
   cannot see your vault.
 
 ## Secrets
+
+Meeting notes get a second line of defence. Granola transcribes whatever was
+said, and an export can carry allegations, discipline, charges, financial
+misconduct and personal hardship about identifiable people straight into the
+vault. `GRANOLA_REDACTION=true` screens every exported note — a local regex and
+keyword pass, then one `claude -p` call per changed note for what is implied
+rather than stated — replacing each passage with a category marker and recording
+the screening in the note's frontmatter. It is off by default and fails closed:
+a note that cannot be screened is not written. See
+`.system/connectors/granola-export/README.md`.
 
 `.system/.env` is the single config file for every connector, namespaced by
 prefix (`GRANOLA_API_KEY`, …) so a bug in one connector never sees another's

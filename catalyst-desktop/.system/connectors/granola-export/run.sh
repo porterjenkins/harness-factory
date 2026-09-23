@@ -1,6 +1,10 @@
 #!/bin/bash
 # Wrapper: loads the GRANOLA_ vars from the shared .system/.env, then runs the
 # exporter. Used by launchd and by hand.
+#
+#   ./run.sh                  # honours GRANOLA_REDACTION from .system/.env
+#   ./run.sh --redacted       # screen this run regardless of the file
+#   ./run.sh --no-redacted    # skip screening this run regardless of the file
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -80,4 +84,8 @@ if [ -z "$NODE_BIN" ]; then
 fi
 if [ -z "$NODE_BIN" ]; then echo "node not found" >&2; exit 1; fi
 
-exec "$NODE_BIN" "$DIR/export.mjs"
+# Forward argv so `./run.sh --redacted` reaches the exporter. `${1+"$@"}` rather
+# than a bare "$@": this targets bash 3.2, where "$@" with no positional
+# parameters is an unbound-variable error under `set -u` and would break every
+# argument-less run -- which is every scheduled run.
+exec "$NODE_BIN" "$DIR/export.mjs" ${1+"$@"}

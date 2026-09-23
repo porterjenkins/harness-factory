@@ -4,7 +4,11 @@
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 -Log
-param([switch]$Log)
+#   powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 -- --redacted
+#
+# Anything after `--` is passed through to export.mjs untouched, which is how
+# --redacted / --no-redacted reach it on Windows.
+param([switch]$Log, [Parameter(ValueFromRemainingArguments = $true)] $Rest)
 $ErrorActionPreference = "Stop"
 $dir = $PSScriptRoot
 
@@ -75,9 +79,11 @@ if (-not $node) { Write-Error "node not found"; exit 1 }
 # Scheduled runs go to the log; by-hand runs print to the terminal, matching the
 # launchd/run.sh split on the Mac.
 $script = Join-Path $dir "export.mjs"
+$rest = @()
+if ($Rest) { $rest = @($Rest | Where-Object { $_ -ne "--" }) }
 if ($Log) {
-  & $node $script *>&1 | Out-File -FilePath $logPath -Append -Encoding utf8
+  & $node $script @rest *>&1 | Out-File -FilePath $logPath -Append -Encoding utf8
 } else {
-  & $node $script
+  & $node $script @rest
 }
 exit $LASTEXITCODE

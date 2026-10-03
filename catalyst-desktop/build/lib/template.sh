@@ -74,6 +74,10 @@ template_load() {
 
   # One pass: H1 opens a section file, H3 opens a nested one that also keeps
   # receiving into its parent, so `tmpl_prose skills` still sees everything.
+  # H2/H3 lines themselves are kept in the parent -- `_tmpl_normalize_heading_tree`
+  # turns a `## Parent` / `### Child` tree into the bullet records tmpl_records
+  # already knows how to read. Dropping them here is why a filled-in heading
+  # tree used to look like an empty # Projects.
   awk -v dir="$TMPL_DIR" '
     function slug(s) {
       s = tolower(s)
@@ -86,15 +90,153 @@ template_load() {
     # an interview template arrives with most sections blank -- so validation
     # would reject the very document it is meant to accept.
     /^# /   { h1 = slug(substr($0, 3)); h3 = ""; printf "" >> (dir "/" h1 ".md"); next }
-    /^### / { if (h1 != "") { h3 = h1 "__" slug(substr($0, 5)); printf "" >> (dir "/" h3 ".md") } next }
-    /^## /  { h3 = ""; next }
+    /^### / {
+      if (h1 != "") {
+        h3 = h1 "__" slug(substr($0, 5))
+        printf "" >> (dir "/" h3 ".md")
+        print $0 >> (dir "/" h1 ".md")
+      }
+      next
+    }
+    /^## /  { h3 = ""; if (h1 != "") print $0 >> (dir "/" h1 ".md"); next }
     {
       if (h1 != "") print $0 >> (dir "/" h1 ".md")
       if (h3 != "") print $0 >> (dir "/" h3 ".md")
     }
   ' "$TMPL_DIR/.clean.md"
 
+  # Bullet records are the canonical grammar. A heading tree is the shape a
+  # human actually writes when filling the interview as a document, so rewrite
+  # it into bullets before validation -- otherwise tmpl_records sees prose and
+  # reports the section empty.
+  _tmpl_normalize_heading_tree projects
+  _tmpl_normalize_heading_tree areas
+  _tmpl_normalize_skill_sources
+
   _tmpl_validate
+}
+
+# If <slug>.md has no top-level `- ` bullets but does have `## ` headings, rewrite
+# the heading tree as `- Parent` / `  - Child` records. Following prose (first
+# paragraph) becomes the description. Leaves a bullet-shaped file untouched, so
+# TEMPLATE.md and the persona-generated templates keep their existing parse.
+_tmpl_normalize_heading_tree() {
+  _f="$TMPL_DIR/$1.md"
+  [ -f "$_f" ] || return 0
+  grep -q '^-[[:space:]]' "$_f" && return 0
+  grep -q '^##[[:space:]]' "$_f" || return 0
+
+  _norm="$TMPL_DIR/.$1.norm.md"
+  awk '
+    function trim(s) {
+      gsub(/\r/, "", s)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
+      gsub(/`/, "", s)
+      return s
+    }
+    function emit() {
+      if (parent == "") return
+      gsub(/\|/, "/", parent); gsub(/\|/, "/", pdesc)
+      printf "- %s | | %s\n", parent, pdesc
+      for (i = 1; i <= nchild; i++) {
+        gsub(/\|/, "/", cname[i]); gsub(/\|/, "/", cdesc[i])
+        printf "  - %s | | %s\n", cname[i], cdesc[i]
+      }
+      nchild = 0
+    }
+    BEGIN { parent = ""; pdesc = ""; nchild = 0; mode = "" }
+    /^## / {
+      emit()
+      parent = trim(substr($0, 4))
+      pdesc = ""; nchild = 0; mode = "pdesc"
+      next
+    }
+    /^### / {
+      if (parent == "") next
+      nchild++
+      cname[nchild] = trim(substr($0, 5))
+      cdesc[nchild] = ""
+      mode = "cdesc"
+      next
+    }
+    {
+      if (parent == "" ) { print; next }          # leading prose, keep as-is
+      line = trim($0)
+      if (line == "") {
+        if (mode == "pdesc" && pdesc != "") mode = "skip"
+        if (mode == "cdesc" && nchild > 0 && cdesc[nchild] != "") mode = "skip"
+        next
+      }
+      if (mode == "pdesc") pdesc = (pdesc == "" ? line : pdesc " " line)
+      else if (mode == "cdesc") cdesc[nchild] = (cdesc[nchild] == "" ? line : cdesc[nchild] " " line)
+    }
+    END { emit() }
+  ' "$_f" > "$_norm"
+
+  if grep -q '^-[[:space:]]' "$_norm"; then
+    mv "$_norm" "$_f"
+  else
+    rm -f "$_norm"
+  fi
+}
+
+# Pull canonical role names out of a free-text Sources value. Interview answers
+# are "Calendar, Slack, meeting transcripts", not `calendar, chat, meetings`;
+# without this, validation treats each comma-chunk as a role and rejects the
+# template for names the registry will never know.
+_tmpl_roles_from_text() {
+  _rt_in="$1"
+  _rt_file="$TMPL_DIR/.roles-from-text"
+  : > "$_rt_file"
+  printf '%s\n' "$_rt_in" | tr ',' '\n' | while IFS= read -r _tok; do
+    _tok="$(printf '%s' "$_tok" | sed -e 's/(.*)//g' -e 's/`//g' \
+      -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [ -n "$_tok" ] || continue
+    _tmpl_roles_consider "$_tok"
+    printf '%s\n' "$_tok" | tr -cs '[:alnum:]-' '\n' | while IFS= read -r _w; do
+      [ -n "$_w" ] && _tmpl_roles_consider "$_w"
+    done
+  done
+  _acc=""; _first=1
+  while IFS= read -r _r; do
+    [ -n "$_r" ] || continue
+    if [ "$_first" = 1 ]; then _acc="$_r"; _first=0; else _acc="$_acc, $_r"; fi
+  done < "$_rt_file"
+  rm -f "$_rt_file"
+  printf '%s' "$_acc"
+}
+
+_tmpl_roles_consider() {
+  _cr="$(_tmpl_role_alias "$1")"
+  [ -n "$_cr" ] || return 0
+  case " $TMPL_KNOWN_ROLES " in *" $_cr "*) ;; *) return 0 ;; esac
+  grep -qx "$_cr" "$TMPL_DIR/.roles-from-text" 2>/dev/null && return 0
+  printf '%s\n' "$_cr" >> "$TMPL_DIR/.roles-from-text"
+}
+
+# Rewrite indented `- Sources:` lines under # Skills to the canonical role list
+# extracted from whatever the interviewer wrote.
+_tmpl_normalize_skill_sources() {
+  for _scope in skills__system skills__user; do
+    _f="$TMPL_DIR/$_scope.md"
+    [ -f "$_f" ] || continue
+    _out="$TMPL_DIR/.$_scope.norm.md"
+    : > "$_out"
+    while IFS= read -r _line || [ -n "$_line" ]; do
+      case "$_line" in
+        *'- Sources:'*|*'- sources:'*)
+          if printf '%s' "$_line" | grep -q '^[[:space:]]\{1,\}-[[:space:]]\{1,\}[Ss]ources:'; then
+            _val="$(printf '%s' "$_line" | sed 's/^[[:space:]]*-[[:space:]]*[Ss]ources:[[:space:]]*//')"
+            _indent="$(printf '%s' "$_line" | sed 's/-[[:space:]]*[Ss]ources:.*//')"
+            printf '%s- Sources: %s\n' "$_indent" "$(_tmpl_roles_from_text "$_val")" >> "$_out"
+            continue
+          fi
+          ;;
+      esac
+      printf '%s\n' "$_line" >> "$_out"
+    done < "$_f"
+    mv "$_out" "$_f"
+  done
 }
 
 _tmpl_validate() {
@@ -112,9 +254,22 @@ _tmpl_validate() {
 
   # A vault with no projects has no content taxonomy: no weekly-plan headings, no
   # folders under Projects/, nothing for CLAUDE.md to enumerate.
-  [ -n "$(tmpl_records projects)" ] \
-    || die "# Projects is empty. A vault needs at least one project -- it is the
+  if [ -z "$(tmpl_records projects)" ]; then
+    if tmpl_has projects; then
+      die "# Projects has content but no parseable project records.
+
+       Write at least one of:
+         - Name | kind | description
+         ## Name                  (### headings become subprojects)
+
+       Nested bullets (or ### headings) become folders under Projects/<name>/.
+       Prose alone is not a project list -- the build needs names to create
+       those folders and the CLAUDE.md section headers every planning skill reads."
+    else
+      die "# Projects is empty. A vault needs at least one project -- it is the
        taxonomy every planning skill reads its section headers from."
+    fi
+  fi
 
   # Validate role names now, while we can still name the line that is wrong.
   _bad=""; rm -f "$TMPL_DIR/.badroles"
@@ -203,7 +358,7 @@ tmpl_children() {
     function trim(s) { gsub(/`/, "", s); gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
     /^-[[:space:]]/ {
       line = substr($0, 3); split(line, f, "|")
-      cur = trim(f[1]); sub(/:$/, "", cur); next
+      cur = trim(f[1]); sub(/:.*$/, "", cur); next
     }
     /^[[:space:]]+-[[:space:]]/ {
       if (cur != want) next
@@ -222,7 +377,7 @@ tmpl_attr() {
   _f="$(_tmpl_file "$1")"; [ -n "$_f" ] || return 0
   awk -v want="$2" -v key="$3" '
     function trim(s) { gsub(/`/, "", s); gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
-    /^-[[:space:]]/ { line = substr($0, 3); split(line, f, "|"); cur = trim(f[1]); sub(/:$/, "", cur); next }
+    /^-[[:space:]]/ { line = substr($0, 3); split(line, f, "|"); cur = trim(f[1]); sub(/:.*$/, "", cur); next }
     /^[[:space:]]+-[[:space:]]/ {
       if (cur != want) next
       line = trim($0); line = substr(line, 3)
@@ -298,6 +453,9 @@ tmpl_roles() {
     }
   ' "$_f" | while IFS='|' read -r _r _s _n; do
       [ -n "$_r" ] || continue
+      case "$(printf '%s' "$_s" | tr '[:upper:]' '[:lower:]')" in
+        none|n/a|na|no|off|false) _s=none ;;
+      esac
       printf '%s|%s|%s\n' "$(_tmpl_role_alias "$_r")" "$_s" "$_n"
     done
 }
@@ -336,6 +494,10 @@ tmpl_has() {
 tmpl_skill_names() {
   tmpl_records "$1" | cut -d'|' -f1 | while read -r _sk; do
     [ -n "$_sk" ] || continue
+    # `- weekly-plan: prose...` is a name plus a note, not a skill called the
+    # whole sentence. Take the token before the first colon.
+    _sk="$(printf '%s' "$_sk" | sed 's/[[:space:]]*:.*//')"
+    [ -n "$_sk" ] || continue
     case "$_sk" in
       weekly-plan|weekly-planning) printf 'weekly-planning\n' ;;
       daily-plan|daily-planning)   printf 'daily-plan\n' ;;
@@ -345,10 +507,47 @@ tmpl_skill_names() {
   done
 }
 
+# Prose after `- \`name\`: ...` in # Skills, used to seed a stub SKILL.md when
+# the template names a skill the payload does not ship.
+tmpl_skill_blurb() {
+  _want="$1"
+  # One scope at a time. Combining them into one pipe and `exit`ing awk on a
+  # match closed the pipe while the second tmpl_records was still writing,
+  # which is SIGPIPE, which under `set -o pipefail` aborted the payload phase
+  # with no message after "skills not requested, removed:".
+  _tmpl_skill_blurb_in() {
+    tmpl_records "$1" | awk -F'|' -v want="$_want" '
+      function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+      function canon(n) {
+        n = trim(n); sub(/:.*$/, "", n); n = trim(n)
+        if (n == "weekly-plan" || n == "weekly-planning") return "weekly-planning"
+        if (n == "daily-plan" || n == "daily-planning") return "daily-plan"
+        if (n == "meeting-prep" || n == "meeting-preparation") return "meeting-prep"
+        return n
+      }
+      {
+        if (canon($1) != want) next
+        note = $1
+        if (index(note, ":")) {
+          sub(/^[^:]*:[[:space:]]*/, "", note)
+          print trim(note)
+        } else if (trim($3) != "") {
+          print trim($3)
+        }
+      }
+    '
+  }
+  _note="$(_tmpl_skill_blurb_in skills__user)"
+  [ -n "$_note" ] || _note="$(_tmpl_skill_blurb_in skills__system)"
+  printf '%s' "$_note"
+}
+
 # Same, for routine docs. `weekly-plan-update` is what people say; the bundled
 # doc is `weekly-plan-daily-update`.
 tmpl_routine_names() {
   tmpl_records routines | cut -d'|' -f1 | while read -r _rt; do
+    [ -n "$_rt" ] || continue
+    _rt="$(printf '%s' "$_rt" | sed 's/[[:space:]]*:.*//')"
     [ -n "$_rt" ] || continue
     case "$_rt" in
       weekly-plan-update|weekly-plan-daily-update) printf 'weekly-plan-daily-update\n' ;;

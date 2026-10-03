@@ -37,7 +37,7 @@ If the app is not running, the first command launches it — but launching is no
 being ready. Poll until the file count stabilises before trusting any result:
 
 ```bash
-python3 .system/wiki/cli.py doctor    # does this properly, including the readiness poll
+.system/wiki/cli.sh doctor    # does this properly, including the readiness poll
 ```
 
 ## Pick the cheapest path that can express the query

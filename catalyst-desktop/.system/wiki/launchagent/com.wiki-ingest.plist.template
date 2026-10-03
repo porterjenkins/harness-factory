@@ -12,8 +12,8 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>__PYTHON__</string>
-    <string>__VAULT__/.system/wiki/cli.py</string>
+    <string>/bin/bash</string>
+    <string>__VAULT__/.system/wiki/cli.sh</string>
     <string>run</string>
   </array>
 

@@ -21,6 +21,7 @@ LIB_DIR="$PAYLOAD/lib"
 . "$HERE/lib/template.sh"
 . "$HERE/lib/hydrate.sh"
 . "$HERE/lib/wire.sh"
+. "$HERE/lib/uv.sh"
 
 TEMPLATE=""; OUT=""; VAULT_NAME=""; LABEL_PREFIX="com.knowledgebase"
 TODAY="$(date '+%Y-%m-%d')"
@@ -66,30 +67,22 @@ rule "1/11  Preflight"
 [ -n "$OUT" ]      || die "--out is required"
 [ -f "$TEMPLATE" ] || die "template not found: $TEMPLATE"
 
-need_cmd python3; need_cmd rsync; need_cmd awk; need_cmd sed; need_cmd find
-[ "$LLM_OFFLINE" = "1" ] || need_cmd claude
+need_cmd rsync; need_cmd awk; need_cmd sed; need_cmd find
 date_fmt "$TODAY" '+%Y-%m-%d' >/dev/null 2>&1 || die "--today must be YYYY-MM-DD, got: $TODAY"
 
-# ruamel.yaml is the trap. It is required for the no-Obsidian frontmatter write
-# path, but `cli.py doctor` reports its absence as INFO rather than FAIL -- so a
-# build passes every check and then fails at write time. A vault this script just
-# created is by definition not open in Obsidian, so this path is the one that runs.
-if [ "$DO_TAGGING" = "1" ]; then
-  if python3 -c 'import ruamel.yaml' >/dev/null 2>&1; then
-    ok "ruamel.yaml present (the no-Obsidian frontmatter write path)"
-  else
-    die "ruamel.yaml is not installed.
+# uv is required (wiki CLI is `uv run --project .system`). Do not send the user
+# to a package-manager page: ensure_uv installs it with the official standalone
+# installer if this machine does not already have it. Runs before the claude
+# check so a retry after signing in does not have to wait on uv again.
+ensure_uv
+[ "$LLM_OFFLINE" = "1" ] || need_cmd claude
 
-       The tagger writes frontmatter through it whenever Obsidian is not running,
-       and a vault this script just created is never open in Obsidian. \`cli.py
-       doctor\` reports this as INFO, not FAIL, so without this check the build
-       would pass and the first tagging pass would fail at write time.
-
-         pip3 install ruamel.yaml
-
-       Or re-run with --skip-tagging to build the vault and tag it later."
-  fi
-fi
+# ruamel.yaml is required for the no-Obsidian write path, and a vault this script
+# just created is never open in Obsidian. Do NOT prove the import from this
+# directory -- `uv run` here uses the payload project, then tagging `cd`s into
+# the vault where there is no such project and the import fails at write time.
+# wire_payload copies pyproject.toml into $VAULT/.system and syncs it; doctor
+# FAILs if that env still cannot import ruamel.yaml while Obsidian is down.
 
 # ------------------------------------------------------------- 2/11  template
 
@@ -225,25 +218,25 @@ fi
 
 rule "9/11  Manifest and first tagging pass"
 
-CLI="python3 $VAULT/.system/wiki/cli.py"
+CLI="$VAULT/.system/wiki/cli.sh"
 if [ "$DO_TAGGING" = "0" ]; then
   warn "--skip-tagging: manifest not built. Later, from $VAULT:"
-  info "  python3 .system/wiki/cli.py init && python3 .system/wiki/cli.py rebuild"
+  info "  .system/wiki/cli.sh init && .system/wiki/cli.sh rebuild"
 else
   # init BEFORE doctor: `doctor` FAILs on a missing manifest, and `init` is what
   # creates it. Running doctor first on a fresh vault fails for the one reason
   # that is guaranteed to be true.
-  step "init";    (cd "$VAULT" && $CLI init)
+  step "init";    "$CLI" init
   step "doctor"
-  if ! (cd "$VAULT" && $CLI doctor); then
+  if ! "$CLI" doctor; then
     die "cli.py doctor failed (above). Fix what it reported and re-run -- the vault
        itself is already built, so a re-run only redoes this phase."
   fi
   # rebuild before the first run, always: skip it and every file looks brand new,
   # so the tagger re-tags the whole vault.
-  step "rebuild"; (cd "$VAULT" && $CLI rebuild)
-  step "status";  (cd "$VAULT" && $CLI status)
-  step "run --dry-run"; (cd "$VAULT" && $CLI run --dry-run)
+  step "rebuild"; "$CLI" rebuild
+  step "status";  "$CLI" status
+  step "run --dry-run"; "$CLI" run --dry-run
 
   if [ "$TAG_ALL" = "1" ]; then
     rule "9b/11  Tagging EVERYTHING -- review gate skipped"
@@ -252,10 +245,10 @@ else
     info "  shape every tag that follows. Nobody is looking at them. If the early"
     info "  tags are wrong they will propagate, and \`tag-lint\` has to clean up after."
     info "  Recoverable if the vault is under git: git checkout -- . and re-run."
-    (cd "$VAULT" && $CLI run --max-tag -1) || warn "the tagging pass reported an error"
+    "$CLI" run --max-tag -1 || warn "the tagging pass reported an error"
   else
     rule "9b/11  Tagging a sample of $TAG_SAMPLE -- REVIEW GATE"
-    (cd "$VAULT" && $CLI run --max-tag "$TAG_SAMPLE") || warn "the sample tagging pass reported an error"
+    "$CLI" run --max-tag "$TAG_SAMPLE" || warn "the sample tagging pass reported an error"
   fi
 
   _log="$VAULT/.system/log/log-$(date_fmt "$TODAY" '+%Y-%m').csv"
@@ -270,16 +263,16 @@ else
     grep '|tag|' "$_log" | tail -"$TAG_SAMPLE" | cut -d'|' -f3,4 | sed 's/^/     /'
     echo
     if [ "$TAG_ALL" = "1" ]; then
-      _pending="$( (cd "$VAULT" && $CLI status) 2>/dev/null | awk '/^  pending/ { print $2 }')"
+      _pending="$( "$CLI" status 2>/dev/null | awk '/^  pending/ { print $2 }')"
       warn "The whole vault was tagged with no review (--tag-all)."
-      info "  Read the tags above and run \`cli.py vocab\` to see the vocabulary that"
+      info "  Read the tags above and run \`cli.sh vocab\` to see the vocabulary that"
       info "  now exists. If it drifted, \`tag-lint\` will propose merges."
       [ "${_pending:-0}" != "0" ] && info "  $_pending file(s) still pending -- deferred by the per-run ceiling, not dropped."
     else
       warn "STOP AND REVIEW THE TAGS ABOVE before tagging the rest."
       info "  The tagger prefers existing high-count tags, so these first tags shape"
       info "  every tag that follows. $TAG_SAMPLE reviewed now is worth an afternoon of merges."
-      info "  Happy? Then:  cd $VAULT && python3 .system/wiki/cli.py run --max-tag -1"
+      info "  Happy? Then:  cd $VAULT && .system/wiki/cli.sh run --max-tag -1"
       info "  Not happy?    edit .system/wiki/tagger.py's prompt and retry the sample."
     fi
   else
@@ -346,7 +339,7 @@ case "$PLATFORM" in
   *)
     warn "no scheduler integration for '$PLATFORM'."
     info "  Run the ingestion pass yourself, or wire it to cron:"
-    info "  cd '$VAULT' && python3 .system/wiki/cli.py run"
+    info "  cd '$VAULT' && .system/wiki/cli.sh run"
     ;;
 esac
 
@@ -370,11 +363,11 @@ echo
 info "Remaining, in order:"
 _n=1
 if [ "$DO_TAGGING" = "1" ] && [ "$TAG_ALL" = "0" ]; then
-  info "  $_n. Review the sample tags above, then: cd '$VAULT' && python3 .system/wiki/cli.py run --max-tag -1"
+  info "  $_n. Review the sample tags above, then: cd '$VAULT' && .system/wiki/cli.sh run --max-tag -1"
   _n=$(( _n + 1 ))
 elif [ "$DO_TAGGING" = "1" ]; then
   info "  $_n. Tags were written without review. Check the vocabulary:"
-  info "     cd '$VAULT' && python3 .system/wiki/cli.py vocab"
+  info "     cd '$VAULT' && .system/wiki/cli.sh vocab"
   _n=$(( _n + 1 ))
 fi
 if [ -s "${CONFIRMED:-/dev/null}" ]; then

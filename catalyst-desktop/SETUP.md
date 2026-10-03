@@ -48,9 +48,7 @@ Nothing counts as done until the handoff summary in Phase 5 is written.
 report before committing to a build.
 
 ```bash
-uname -s                      # Darwin (macOS) or a Windows environment
-python3 -V                    # 3.9 or newer
-python3 -c 'import ruamel.yaml'   # REQUIRED — see below
+uname -s                      # Darwin (macOS), Linux, or a Windows environment
 node -v                       # 18 or newer (only for the Granola exporter)
 which claude                  # required for tagging
 which obsidian                # required for search/retrieval
@@ -60,18 +58,20 @@ ls -d /Applications/Obsidian.app 2>/dev/null
 | Requirement | If missing | Hard stop? |
 | --- | --- | --- |
 | Claude Code or Claude Cowork | escalate | **Yes** |
-| `python3` ≥ 3.9 | ask user to install | **Yes** |
-| `ruamel.yaml` | `pip3 install ruamel.yaml` | **Yes**, for tagging — see below |
+| `uv` | `build-vault.sh` installs it in preflight | Only if that install fails — then escalate. Do **not** send the user to a package-manager page. |
 | `claude` on `PATH`, signed in | ask user to install and sign in | **Yes** — no tagging without it |
 | Obsidian desktop app | install from obsidian.md | **Yes** — the CLI is only a client |
 | `obsidian` CLI on `PATH` | see below | No — degraded mode |
 | `node` ≥ 18 | only blocks the Granola exporter | No |
 
+**`uv` is the build's job.** The wiki CLI is `uv run --project .system`. If `uv` is missing, Phase 1 of `build-vault.sh` installs it with the official standalone installer (macOS/Linux: `install.sh`; Windows: the PowerShell installer, so Task Scheduler sees the same binary). An already-installed copy (Homebrew, WinGet, a prior build) is left alone. Do not ask the user to install a package manager.
+
 **`ruamel.yaml` is the one that hides.** The tagger writes frontmatter through it whenever
 Obsidian is not running — and a vault the build just created is never open in Obsidian, so that
-is always the path taken on a fresh build. `cli.py doctor` reports its absence as INFO, not FAIL,
-so without an explicit check the build passes every gate and then fails at write time.
-`build-vault.sh` checks it in Phase 1 and refuses to continue.
+is always the path taken on a fresh build. `pip install` into system Python does not help:
+the CLI must run as `uv run --project <vault>/.system` (`.system/wiki/cli.sh`). The build
+copies `pyproject.toml` into the vault and syncs it; `doctor` FAILs if that env still cannot
+import ruamel.yaml while Obsidian is down.
 
 **The Obsidian CLI is not the app.** The binary (usually `/usr/local/bin/obsidian`) is a client
 that talks to the running GUI process and does nothing without it. Consequence that shapes the
@@ -142,7 +142,7 @@ whole vault, and `tag-lint` then has to clean up after them. Ten reviewed tags n
 afternoon of merges later.
 
 ```bash
-cd <vault> && python3 .system/wiki/cli.py run --max-tag -1   # only after the user approves
+cd <vault> && .system/wiki/cli.sh run --max-tag -1   # only after the user approves
 ```
 
 The build takes `--tag-all` to skip this and tag everything in one pass. It exists
@@ -204,6 +204,7 @@ Stop the affected phase and tell the user to contact their implementation engine
 - Obsidian cannot be installed — the vault still works as markdown, but there is no retrieval.
 - The tagging sample is wrong and editing `tagger.py` does not fix it.
 - `cli.py doctor` reports a failure you cannot explain from this file.
+- `uv` cannot be installed (the build's preflight installer failed). Do not ask the user to install a package manager.
 
 Escalating is not a failure. Silently substituting a different tool, or a degraded search path,
 is.

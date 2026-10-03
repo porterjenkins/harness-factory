@@ -194,6 +194,7 @@ EOF
   # run.
   tmpl_skill_names skills__system | while read -r _sk; do
     [ -n "$_sk" ] || continue
+    [ -f "$VAULT/Skills/$_sk/SKILL.md" ] || continue
     printf '| `%s` | `vault` | %s | always |\n' "$_sk" "$(_hyd_contributes "$_sk" vault)"
     { tmpl_alias_attr skills__system "$_sk" Sources | tr ',' '\n' \
       | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/`//g' \
@@ -206,6 +207,7 @@ EOF
   # User skills read the vault plus whatever roles the template gave them.
   tmpl_skill_names skills__user | while read -r _sk; do
     [ -n "$_sk" ] || continue
+    [ -f "$VAULT/Skills/$_sk/SKILL.md" ] || continue
     printf '| `%s` | `vault` | %s | always |\n' "$_sk" "$(_hyd_contributes "$_sk" vault)"
     _srcs="$(tmpl_alias_attr skills__user "$_sk" Sources)"
     # `|| true`: a skill whose `Sources:` is blank -- the state every unfilled

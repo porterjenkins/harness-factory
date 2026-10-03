@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Command-line entrypoint for the wiki ingestion pipeline.
 
-    python3 .system/wiki/cli.py doctor          # verify the environment
-    python3 .system/wiki/cli.py init            # create .system/wiki/manifest.sqlite
-    python3 .system/wiki/cli.py run --dry-run   # classify, change nothing
-    python3 .system/wiki/cli.py run             # the real thing (LaunchAgent runs this)
-    python3 .system/wiki/cli.py rebuild         # reconstruct manifest from frontmatter
-    python3 .system/wiki/cli.py prune           # hard-delete expired tombstones
-    python3 .system/wiki/cli.py status          # manifest counts
-    python3 .system/wiki/cli.py vocab           # tag vocabulary with counts
-    python3 .system/wiki/cli.py tag-lint        # drift report
+    .system/wiki/cli.sh doctor          # verify the environment
+    .system/wiki/cli.sh init            # create .system/wiki/manifest.sqlite
+    .system/wiki/cli.sh run --dry-run   # classify, change nothing
+    .system/wiki/cli.sh run             # the real thing (LaunchAgent runs this)
+    .system/wiki/cli.sh rebuild         # reconstruct manifest from frontmatter
+    .system/wiki/cli.sh prune           # hard-delete expired tombstones
+    .system/wiki/cli.sh status          # manifest counts
+    .system/wiki/cli.sh vocab           # tag vocabulary with counts
+    .system/wiki/cli.sh tag-lint        # drift report
 """
 from __future__ import annotations
 
@@ -87,11 +87,23 @@ def cmd_doctor(args) -> int:
             except Exception as exc:
                 check("tag vocabulary readable", False, str(exc)[:120])
 
+    # A freshly built vault is never open in Obsidian, so this is the write path
+    # the build actually takes. Reporting absence as INFO let tagging "succeed"
+    # with ten write failures. Fail here when the Obsidian path is unavailable.
     try:
         import ruamel.yaml  # noqa: F401
-        print("INFO ruamel.yaml available (cloud write path ready)")
+        ruamel_ok = True
     except ImportError:
-        print("INFO ruamel.yaml not installed -- fine while the Obsidian CLI is the write path")
+        ruamel_ok = False
+    if has_cli:
+        if ruamel_ok:
+            print("INFO ruamel.yaml available (disk write path also ready)")
+        else:
+            print("INFO ruamel.yaml not installed -- fine while the Obsidian CLI is the write path")
+    else:
+        check("ruamel.yaml (no-Obsidian write path)", ruamel_ok,
+              "run via .system/wiki/cli.sh (uv run --project .system), "
+              "not bare python3" if not ruamel_ok else "")
 
     print("\n%s" % ("all checks passed" if ok else "one or more checks FAILED"))
     return 0 if ok else 1
